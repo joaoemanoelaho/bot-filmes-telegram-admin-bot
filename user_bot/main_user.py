@@ -11,6 +11,10 @@ from telegram.ext import Application
 import handlers_user as handlers
 from config import BOT_TOKEN
 
+# --- DEBUG PRINT ---
+print("[DEBUG] Versão do código: 1.1 (com asyncio.Event e Logs)")
+# ---------------------
+
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 application: Application = None
@@ -18,6 +22,9 @@ APP_INITIALIZED = asyncio.Event() # 2. Crie um Evento global
 
 async def error_handler(update: object, context):
     """Loga os erros causados pelos handlers."""
+    # --- DEBUG PRINT ---
+    print(f"[DEBUG] ERROR_HANDLER ATIVADO! Erro: {context.error}")
+    # ---------------------
     print(f"❌ Erro no handler: {context.error}")
     import traceback
     traceback.print_exc()
@@ -25,6 +32,10 @@ async def error_handler(update: object, context):
 async def startup():
     """Inicializa o bot ao iniciar o servidor"""
     global application
+    
+    # --- DEBUG PRINT ---
+    print("[DEBUG] Função startup() iniciada.")
+    # ---------------------
     
     try:
         application = Application.builder().token(BOT_TOKEN).build()
@@ -39,13 +50,16 @@ async def startup():
         application.add_handler(handlers.request_command_handler)
         
         # 3. Adicione o error handler (MUITO IMPORTANTE)
+        print("[DEBUG] Adicionando error_handler...")
         application.add_error_handler(error_handler)
         
         await application.initialize()
         print("✅ Bot de USUÁRIO (webhook) inicializado!")
         
         # 4. Sinalize para os webhooks que o bot está pronto
+        print("[DEBUG] Sinalizando APP_INITIALIZED.set()")
         APP_INITIALIZED.set() 
+        print("[DEBUG] Startup concluído.")
         
     except Exception as e:
         print(f"❌ ERRO NO STARTUP: {e}")
@@ -56,8 +70,16 @@ async def startup():
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
     
+    # --- DEBUG PRINT ---
+    print("[DEBUG] /webhook recebido. Aguardando APP_INITIALIZED...")
+    # ---------------------
+    
     # 5. Espere o startup terminar ANTES de fazer qualquer coisa
     await APP_INITIALIZED.wait() 
+    
+    # --- DEBUG PRINT ---
+    print("[DEBUG] APP_INITIALIZED está 'set'. Processando webhook do Telegram.")
+    # ---------------------
     
     try:
         data = await request.json()
@@ -87,8 +109,16 @@ async def telegram_webhook(request: Request) -> Response:
 async def supabase_webhook(request: Request) -> Response:
     """Recebe notificações do Supabase"""
     
+    # --- DEBUG PRINT ---
+    print("[DEBUG] /webhook/supabase recebido. Aguardando APP_INITIALIZED...")
+    # ---------------------
+    
     # 6. Espere o startup terminar aqui também
     await APP_INITIALIZED.wait()
+    
+    # --- DEBUG PRINT ---
+    print("[DEBUG] APP_INITIALIZED está 'set'. Processando webhook do Supabase.")
+    # ---------------------
     
     try:
         data = await request.json()
