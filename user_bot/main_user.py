@@ -1,14 +1,22 @@
 # Salve como: user_bot/main_user.py
 
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
+
 import logging
 from telegram.ext import Application
 import handlers_user as handlers # <-- Importa o arquivo correto
-from config import USER_BOT_TOKEN # <-- Use um novo token do config.py
+from config import BOT_TOKEN # <-- Use um novo token do config.py
+
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 def main() -> None:
-    application = Application.builder().token(USER_BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(handlers.start_handler)
     application.add_handler(handlers.button_click_handler)

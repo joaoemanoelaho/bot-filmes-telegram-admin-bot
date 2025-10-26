@@ -12,11 +12,17 @@ import io
 import time
 import re
 import os
+import sys
 from thefuzz import fuzz
 from starlette.requests import Request
 from starlette.responses import Response
 import uuid
 import tastedive_api
+
+    
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.insert(0, parent_dir)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
