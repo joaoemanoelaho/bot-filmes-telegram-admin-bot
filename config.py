@@ -28,6 +28,8 @@ DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
 LOG_FILE = os.getenv("LOG_FILE")
 REFERER_URL = os.getenv("REFERER_URL")
 
+USER_AGENT = os.getenv("USER_AGENT") 
+
 # Validações
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN não configurado!")

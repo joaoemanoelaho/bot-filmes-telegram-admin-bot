@@ -10,7 +10,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 try:
-    from config import M3U_FILE_PATH, DOWNLOAD_FOLDER, LOG_FILE, REFERER_URL
+    from config import M3U_FILE_PATH, DOWNLOAD_FOLDER, LOG_FILE, REFERER_URL, USER_AGENT
 except ImportError:
     print("ERRO: Não foi possível encontrar o arquivo 'config_downloader.py'.")
     print("Por favor, crie o arquivo com as variáveis M3U_FILE_PATH, DOWNLOAD_FOLDER, etc.")
@@ -116,7 +116,7 @@ def download_movie(movie_info: dict):
             '--fragment-retries', '20',
             '--no-check-certificates', 
             '--socket-timeout', '30',
-            '--user-agent', HEADERS['User-Agent'],
+            '--user-agent', USER_AGENT,
             '--add-header', f'Referer: {REFERER_URL}',
             '--add-header', f'Origin: {REFERER_URL}',
             url
