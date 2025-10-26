@@ -29,7 +29,7 @@ def main() -> None:
         application.run_polling()
     except Exception as e:
         print(f"❌ Erro: {e}. Reiniciando em 10 segundos...")
-        asyncio.sleep(10)
+        asyncio.run(asyncio.sleep(10))
         main()
 
 if __name__ == "__main__":
