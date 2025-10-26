@@ -23,6 +23,11 @@ STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID"))
 PUSHINPAY_API_KEY = os.getenv("PUSHINPAY_API_KEY")
 TASTEDIVE_API_KEY = os.getenv("TASTEDIVE_API_KEY")
 
+M3U_FILE_PATH = os.getenv("M3U_FILE_PATH")
+DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
+LOG_FILE = os.getenv("LOG_FILE")
+REFERER_URL = os.getenv("REFERER_URL")
+
 # Validações
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN não configurado!")
