@@ -1,15 +1,15 @@
-# Salve como: admin_bot/main_admin.py
-
 import sys
 import os
+import asyncio
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
+
 import logging
 from telegram.ext import Application
 import handlers_admin as handlers
-from config import ADMIN_BOT_TOKEN # <-- Use o token do seu bot de admin
+from config import ADMIN_BOT_TOKEN
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
@@ -24,7 +24,13 @@ def main() -> None:
     application.add_handler(handlers.channel_video_handler)
 
     print("Bot de ADMIN iniciado e rodando!")
-    application.run_polling()
+    
+    try:
+        application.run_polling()
+    except Exception as e:
+        print(f"❌ Erro: {e}. Reiniciando em 10 segundos...")
+        asyncio.sleep(10)
+        main()
 
 if __name__ == "__main__":
     main()
