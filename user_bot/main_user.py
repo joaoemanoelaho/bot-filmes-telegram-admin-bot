@@ -61,7 +61,7 @@ async def telegram_webhook(request: Request) -> Response:
             print(f"⚠️ Sem update_id. Chaves: {data.keys()}")
             return Response("ok", status_code=200)
         
-        update = Update.de_json(data, application.bot)
+        update = Update.de_json(data, None)
         await application.process_update(update)
         print(f"✅ Update processado: {data.get('update_id')}")
         
