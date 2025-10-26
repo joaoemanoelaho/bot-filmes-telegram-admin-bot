@@ -1,0 +1,11 @@
+python-telegram-bot[ext]
+supabase
+tmdbv3api
+yt-dlp
+thefuzz
+python-Levenshtein
+uvicorn
+starlette
+pyrogram 
+tgcrypto
+python-dotenv

@@ -1,0 +1,9 @@
+# Ignore session files
+*.session-journal
+*.session
+
+__pycache__/
+
+.venv/
+venv/
+.env
