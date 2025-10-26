@@ -25,6 +25,13 @@ async def startup():
     """Inicializa o bot ao iniciar o servidor"""
     global application
     
+    # Remove webhook antigo (polling)
+    await bot.delete_webhook()
+    
+    # Registra novo webhook
+    await bot.set_webhook(url="https://banco-pedido.squareweb.app/webhook")
+    print("✅ Webhook registrado!")
+    
     application = Application.builder().token(BOT_TOKEN).build()
     
     application.add_handler(handlers.start_handler)
@@ -38,7 +45,7 @@ async def startup():
     
     await application.initialize()
     print("✅ Bot de USUÁRIO (webhook) inicializado!")
-
+    
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
     try:
