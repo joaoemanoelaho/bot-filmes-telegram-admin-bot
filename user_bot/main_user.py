@@ -45,18 +45,25 @@ async def startup():
     
     await application.initialize()
     print("✅ Bot de USUÁRIO (webhook) inicializado!")
-    
+
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
     try:
         data = await request.json()
+        print(f"📨 Dados recebidos no webhook: {data}")
+        
+        # Valida se é um update válido do Telegram
+        if not isinstance(data, dict):
+            print(f"⚠️ Dados não são dicionário: {type(data)}")
+            return Response("ok", status_code=200)
         
         if 'update_id' not in data:
-            print(f"⚠️ Dados inválidos recebidos (sem update_id): {data}")
+            print(f"⚠️ Sem update_id. Chaves: {data.keys()}")
             return Response("ok", status_code=200)
         
         update = Update.de_json(data, bot)
         await application.process_update(update)
+        print(f"✅ Update processado: {data.get('update_id')}")
         
     except Exception as e:
         print(f"❌ Erro ao processar webhook do Telegram: {e}")
