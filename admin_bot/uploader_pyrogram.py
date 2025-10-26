@@ -6,6 +6,9 @@ import time
 import random
 from pyrogram import Client
 from pyrogram.errors import FloodWait
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import API_ID, API_HASH, STORAGE_CHANNEL_ID
 

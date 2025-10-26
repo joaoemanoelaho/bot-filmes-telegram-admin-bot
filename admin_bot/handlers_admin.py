@@ -10,6 +10,9 @@ import re
 import os
 from thefuzz import fuzz
 import uuid
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Mensagem de início simples para o bot de admin."""

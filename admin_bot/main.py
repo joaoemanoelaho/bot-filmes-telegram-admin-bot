@@ -1,5 +1,9 @@
 # Salve como: admin_bot/main_admin.py
 
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import logging
 from telegram.ext import Application
 import handlers_admin as handlers

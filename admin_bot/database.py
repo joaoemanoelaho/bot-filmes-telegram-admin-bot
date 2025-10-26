@@ -1,6 +1,12 @@
 #
 # Arquivo para gerenciar toda a interação com o banco de dados Supabase.
 #
+
+import sys
+import os
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import datetime, timedelta # Para manipulação de datas
