@@ -20,6 +20,13 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # bot = Bot(token=BOT_TOKEN)
 application = None
+APP_INITIALIZED = asyncio.Event()
+
+async def error_handler(update: object, context):
+    """Loga os erros causados pelos handlers."""
+    print(f"❌ Erro no handler: {context.error}")
+    import traceback
+    traceback.print_exc()
 
 async def startup():
     """Inicializa o bot ao iniciar o servidor"""
@@ -36,9 +43,12 @@ async def startup():
         application.add_handler(handlers.cancel_command_handler)
         application.add_handler(handlers.help_command_handler)
         application.add_handler(handlers.request_command_handler)
+        application.add_error_handler(error_handler)
         
         await application.initialize()
         print("✅ Bot de USUÁRIO (webhook) inicializado!")
+
+        APP_INITIALIZED.set()
         
     except Exception as e:
         print(f"❌ ERRO NO STARTUP: {e}")
@@ -48,6 +58,8 @@ async def startup():
 
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
+    await APP_INITIALIZED.wait()
+
     try:
         data = await request.json()
         print(f"📨 Dados recebidos no webhook: {data}")
@@ -74,6 +86,8 @@ async def telegram_webhook(request: Request) -> Response:
 
 async def supabase_webhook(request: Request) -> Response:
     """Recebe notificações do Supabase"""
+    await APP_INITIALIZED.wait()
+
     try:
         data = await request.json()
         print(f"--- WEBHOOK DO SUPABASE RECEBIDO ---\n{data}\n---------------------------------")
