@@ -1,12 +1,7 @@
 import sys
 import os
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
-
 import logging
-import asyncio
+import asyncio # 1. Importe asyncio
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
@@ -18,9 +13,8 @@ from config import BOT_TOKEN
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# bot = Bot(token=BOT_TOKEN)
-application = None
-APP_INITIALIZED = asyncio.Event()
+application: Application = None
+APP_INITIALIZED = asyncio.Event() # 2. Crie um Evento global
 
 async def error_handler(update: object, context):
     """Loga os erros causados pelos handlers."""
@@ -43,12 +37,15 @@ async def startup():
         application.add_handler(handlers.cancel_command_handler)
         application.add_handler(handlers.help_command_handler)
         application.add_handler(handlers.request_command_handler)
+        
+        # 3. Adicione o error handler (MUITO IMPORTANTE)
         application.add_error_handler(error_handler)
         
         await application.initialize()
         print("✅ Bot de USUÁRIO (webhook) inicializado!")
-
-        APP_INITIALIZED.set()
+        
+        # 4. Sinalize para os webhooks que o bot está pronto
+        APP_INITIALIZED.set() 
         
     except Exception as e:
         print(f"❌ ERRO NO STARTUP: {e}")
@@ -58,8 +55,10 @@ async def startup():
 
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
-    await APP_INITIALIZED.wait()
-
+    
+    # 5. Espere o startup terminar ANTES de fazer qualquer coisa
+    await APP_INITIALIZED.wait() 
+    
     try:
         data = await request.json()
         print(f"📨 Dados recebidos no webhook: {data}")
@@ -73,7 +72,8 @@ async def telegram_webhook(request: Request) -> Response:
             print(f"⚠️ Sem update_id. Chaves: {data.keys()}")
             return Response("ok", status_code=200)
         
-        update = Update.de_json(data, None)
+        # Agora é seguro usar application.bot porque esperamos o Event
+        update = Update.de_json(data, application.bot) 
         await application.process_update(update)
         print(f"✅ Update processado: {data.get('update_id')}")
         
@@ -86,8 +86,10 @@ async def telegram_webhook(request: Request) -> Response:
 
 async def supabase_webhook(request: Request) -> Response:
     """Recebe notificações do Supabase"""
+    
+    # 6. Espere o startup terminar aqui também
     await APP_INITIALIZED.wait()
-
+    
     try:
         data = await request.json()
         print(f"--- WEBHOOK DO SUPABASE RECEBIDO ---\n{data}\n---------------------------------")
