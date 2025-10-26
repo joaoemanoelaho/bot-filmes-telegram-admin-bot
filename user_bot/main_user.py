@@ -30,12 +30,19 @@ async def telegram_webhook(request: Request) -> Response:
     
     try:
         data = await request.json()
+        
+        # Valida se é um update válido do Telegram
+        if 'update_id' not in data:
+            print(f"⚠️ Dados inválidos recebidos (sem update_id): {data}")
+            return Response("ok", status_code=200)
+        
         # Aguarda o bot estar pronto
         if not bot.bot:
             await bot.initialize()
         
         update = Update.de_json(data, bot)
         await application.process_update(update)
+        
     except Exception as e:
         print(f"❌ Erro ao processar webhook do Telegram: {e}")
         import traceback
@@ -113,9 +120,6 @@ app = Starlette(routes=routes)
 
 if __name__ == "__main__":
     import uvicorn
-    
-    # Registra webhook
-    asyncio.run(register_webhook())
     
     port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
