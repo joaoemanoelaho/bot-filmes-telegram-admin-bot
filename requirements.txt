@@ -9,3 +9,4 @@ starlette
 pyrogram 
 tgcrypto
 python-dotenv
+flask
