@@ -18,7 +18,7 @@ from config import BOT_TOKEN
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-bot = Bot(token=BOT_TOKEN)
+# bot = Bot(token=BOT_TOKEN)
 application = None
 
 async def startup():
@@ -45,7 +45,7 @@ async def startup():
         import traceback
         traceback.print_exc()
         raise
-    
+
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
     try:
@@ -61,7 +61,7 @@ async def telegram_webhook(request: Request) -> Response:
             print(f"⚠️ Sem update_id. Chaves: {data.keys()}")
             return Response("ok", status_code=200)
         
-        update = Update.de_json(data, bot)
+        update = Update.de_json(data, application.bot)
         await application.process_update(update)
         print(f"✅ Update processado: {data.get('update_id')}")
         
@@ -90,7 +90,7 @@ async def supabase_webhook(request: Request) -> Response:
                 message = f"😔 Olha! Sobre o seu pedido '{title}', infelizmente não conseguimos adicioná-lo ao catálogo no momento."
             
             if message:
-                await bot.send_message(chat_id=user_id, text=message)
+                await application.bot.send_message(chat_id=user_id, text=message)
         
         return Response(status_code=200)
     except Exception as e:
