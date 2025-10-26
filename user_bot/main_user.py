@@ -6,6 +6,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 import logging
+import asyncio
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
@@ -29,10 +30,16 @@ async def telegram_webhook(request: Request) -> Response:
     
     try:
         data = await request.json()
+        # Aguarda o bot estar pronto
+        if not bot.bot:
+            await bot.initialize()
+        
         update = Update.de_json(data, bot)
         await application.process_update(update)
     except Exception as e:
         print(f"❌ Erro ao processar webhook do Telegram: {e}")
+        import traceback
+        traceback.print_exc()
     
     return Response("ok", status_code=200)
 
@@ -51,7 +58,7 @@ async def supabase_webhook(request: Request) -> Response:
             if new_status == 'added':
                 message = f"🎉 Boas notícias! O título que você pediu, '{title}', já está disponível no nosso catálogo!"
             elif new_status == 'denied':
-                message = f"😔 Olá! Sobre o seu pedido '{title}', infelizmente não conseguimos adicioná-lo ao catálogo no momento."
+                message = f"😔 Olha! Sobre o seu pedido '{title}', infelizmente não conseguimos adicioná-lo ao catálogo no momento."
             
             if message:
                 await bot.send_message(chat_id=user_id, text=message)
@@ -86,6 +93,15 @@ async def initialize_app():
     initialized = True
     print("✅ Bot de USUÁRIO (webhook) inicializado!")
 
+async def register_webhook():
+    """Registra o webhook no Telegram"""
+    webhook_url = "https://banco-pedido.squareweb.app/webhook"
+    try:
+        await bot.set_webhook(url=webhook_url)
+        print(f"✅ Webhook registrado: {webhook_url}")
+    except Exception as e:
+        print(f"❌ Erro ao registrar webhook: {e}")
+
 # Define as rotas
 routes = [
     Route("/webhook", endpoint=telegram_webhook, methods=["POST"]),
@@ -97,6 +113,10 @@ app = Starlette(routes=routes)
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 80))
+    
+    # Registra webhook
+    asyncio.run(register_webhook())
+    
+    port = int(os.environ.get("PORT", 8000))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
