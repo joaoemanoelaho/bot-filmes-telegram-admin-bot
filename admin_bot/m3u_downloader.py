@@ -118,6 +118,7 @@ def download_movie(movie_info: dict):
             '--socket-timeout', '30',
             '--user-agent', HEADERS['User-Agent'],
             '--add-header', f'Referer: {REFERER_URL}',
+            '--add-header', f'Origin: {REFERER_URL}',
             url
         ]
         
