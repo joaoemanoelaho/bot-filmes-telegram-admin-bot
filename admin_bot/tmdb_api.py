@@ -15,7 +15,7 @@ def search_movie_options(query: str) -> list:
     sem nenhum filtro de idioma, para o usuário escolher.
     """
     try:
-        # 1. Limpeza da query e extração do ano (seu código original)
+        # 1. Limpeza da query e extração do ano
         clean_query = query.replace('&', 'and')
         year_match = re.search(r'\((\d{4})\)', clean_query)
         year = int(year_match.group(1)) if year_match else None
@@ -25,53 +25,74 @@ def search_movie_options(query: str) -> list:
         # 2. Busca inicial
         search_results = movie_search.search(clean_query)
         
-        # 3. Filtro inicial por ano
-        filtered_results = [r for r in search_results if str(year) in r.release_date] if year else search_results
+        # 3. Filtro inicial por ano (com verificação de tipo)
+        filtered_results = []
+        for r in search_results:
+            try:
+                release_date = getattr(r, 'release_date', None)
+                if year:
+                    if release_date and str(year) in str(release_date):
+                        filtered_results.append(r)
+                else:
+                    filtered_results.append(r)
+            except:
+                filtered_results.append(r)
+        
+        if not filtered_results:
+            filtered_results = search_results
 
         options = []
-        # O loop agora pega os 3 primeiros resultados que a API retornou, sem validação extra
+        # O loop agora pega os 3 primeiros resultados
         for result in filtered_results[:3]:
-            details = movie_search.details(result.id, append_to_response='translations')
-            
-            # --- LÓGICA DO TÍTULO INTELIGENTE ---
-            
-            # 1. Pega os títulos base
-            title_pt = details.title  # Este é o título em PT-BR ou o fallback para o original
-            original_title = details.original_title
-            
-            # 2. Busca pelo título em Inglês na lista de traduções
-            english_title = None
-            translations_data = details.translations.get('translations', [])
-            english_translation = next((t['data']['title'] for t in translations_data if t['iso_639_1'] == 'en' and t['data']['title']), None)
-            if english_translation:
-                english_title = english_translation
+            try:
+                # Verifica se é um objeto válido
+                if isinstance(result, str):
+                    continue
+                    
+                details = movie_search.details(result.id, append_to_response='translations')
+                
+                # --- LÓGICA DO TÍTULO INTELIGENTE ---
+                title_pt = details.title
+                original_title = details.original_title
+                
+                # Busca pelo título em Inglês
+                english_title = None
+                translations_data = details.translations.get('translations', [])
+                english_translation = next((t['data']['title'] for t in translations_data if t['iso_639_1'] == 'en' and t['data']['title']), None)
+                if english_translation:
+                    english_title = english_translation
 
-            # 3. Decide qual título exibir
-            display_title = title_pt # Começa com o padrão (PT ou Original)
-            
-            # Se o título em PT for igual ao original (ou seja, não há tradução PT)
-            # E se existir um título em Inglês, use o Inglês pois é mais legível.
-            if title_pt == original_title and english_title:
-                display_title = english_title
-            
-            # 4. Monta o texto final para o botão
-            # Se o título de exibição for diferente do original, mostre o original para contexto.
-            if display_title != original_title:
-                final_button_text = f"{display_title} ({original_title})"
-            else:
-                final_button_text = display_title # Se forem iguais, não precisa repetir
+                # Decide qual título exibir
+                display_title = title_pt
+                if title_pt == original_title and english_title:
+                    display_title = english_title
+                
+                # Monta o texto final
+                if display_title != original_title:
+                    final_button_text = f"{display_title} ({original_title})"
+                else:
+                    final_button_text = display_title
 
-            # --- FIM DA LÓGICA ---
+                # Extrai ano com segurança
+                year_value = 'N/A'
+                try:
+                    if details.release_date:
+                        year_value = int(details.release_date.split('-')[0])
+                except:
+                    pass
 
-            options.append({
-                'tmdb_id': details.id,
-                'title': display_title, # O título principal para salvar no DB
-                'button_text': final_button_text, # O texto para exibir no botão
-                'year': int(details.release_date.split('-')[0]) if details.release_date else 'N/A',
-                'genre': details.genres[0]['name'] if details.genres else 'N/A',
-                'description': details.overview,
-                'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
-            })
+                options.append({
+                    'tmdb_id': details.id,
+                    'title': display_title,
+                    'button_text': final_button_text,
+                    'year': year_value,
+                    'genre': details.genres[0]['name'] if details.genres else 'N/A',
+                    'description': details.overview,
+                    'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
+                })
+            except Exception as e:
+                print(f"Erro ao processar resultado individual: {e}")
+                continue
             
         return options
     
