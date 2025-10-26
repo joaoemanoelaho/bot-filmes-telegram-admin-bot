@@ -20,25 +20,33 @@ logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 bot = Bot(token=BOT_TOKEN)
 application = None
-initialized = False
+
+async def startup():
+    """Inicializa o bot ao iniciar o servidor"""
+    global application
+    
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    application.add_handler(handlers.start_handler)
+    application.add_handler(handlers.button_click_handler)
+    application.add_handler(handlers.inline_search_handler)
+    application.add_handler(handlers.watch_handler)
+    application.add_handler(handlers.text_handler)
+    application.add_handler(handlers.cancel_command_handler)
+    application.add_handler(handlers.help_command_handler)
+    application.add_handler(handlers.request_command_handler)
+    
+    await application.initialize()
+    print("✅ Bot de USUÁRIO (webhook) inicializado!")
 
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
-    global initialized
-    if not initialized:
-        await initialize_app()
-    
     try:
         data = await request.json()
         
-        # Valida se é um update válido do Telegram
         if 'update_id' not in data:
             print(f"⚠️ Dados inválidos recebidos (sem update_id): {data}")
             return Response("ok", status_code=200)
-        
-        # Aguarda o bot estar pronto
-        if not bot.bot:
-            await bot.initialize()
         
         update = Update.de_json(data, bot)
         await application.process_update(update)
@@ -79,27 +87,6 @@ async def health_check(request: Request) -> Response:
     """Verificação de saúde do servidor"""
     return Response("Servidor e Bot estão online!", status_code=200)
 
-async def initialize_app():
-    """Inicializa a aplicação do bot"""
-    global application, initialized
-    if initialized:
-        return
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    application.add_handler(handlers.start_handler)
-    application.add_handler(handlers.button_click_handler)
-    application.add_handler(handlers.inline_search_handler)
-    application.add_handler(handlers.watch_handler)
-    application.add_handler(handlers.text_handler)
-    application.add_handler(handlers.cancel_command_handler)
-    application.add_handler(handlers.help_command_handler)
-    application.add_handler(handlers.request_command_handler)
-    
-    await application.initialize()
-    initialized = True
-    print("✅ Bot de USUÁRIO (webhook) inicializado!")
-
 # Define as rotas
 routes = [
     Route("/webhook", endpoint=telegram_webhook, methods=["POST"]),
@@ -107,7 +94,7 @@ routes = [
     Route("/health", endpoint=health_check, methods=["GET"]),
 ]
 
-app = Starlette(routes=routes)
+app = Starlette(routes=routes, on_startup=[startup])
 
 if __name__ == "__main__":
     import uvicorn
