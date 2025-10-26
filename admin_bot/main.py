@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import asyncio
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -14,7 +15,7 @@ from telegram.error import NetworkError, Conflict
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-def main() -> None:
+async def main() -> None:
     """Inicia o bot com retry automático"""
     retry_count = 0
     max_retries = 5
@@ -32,25 +33,25 @@ def main() -> None:
 
             print("✅ Bot de ADMIN iniciado e rodando (polling)!")
             retry_count = 0
-            application.run_polling(allowed_updates=["message", "channel_post"])
+            await application.run_polling(allowed_updates=["message", "channel_post"])
             
         except Conflict:
             print("❌ Conflito: outro bot já está rodando. Aguardando...")
-            time.sleep(10)
+            await asyncio.sleep(10)
             
         except NetworkError as e:
             retry_count += 1
             if retry_count >= max_retries:
                 print(f"❌ Muitas tentativas falhadas. Reiniciando em 30s...")
-                time.sleep(30)
+                await asyncio.sleep(30)
                 retry_count = 0
             else:
                 print(f"⚠️ Erro de rede ({retry_count}/{max_retries}): {e}. Tentando em 5s...")
-                time.sleep(5)
+                await asyncio.sleep(5)
                 
         except Exception as e:
             print(f"❌ Erro inesperado: {e}. Reiniciando em 10s...")
-            time.sleep(10)
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
