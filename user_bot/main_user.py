@@ -121,6 +121,6 @@ app = Starlette(routes=routes)
 if __name__ == "__main__":
     import uvicorn
     
-    port = int(os.environ.get("PORT", 8000))
+    port = int(os.environ.get("PORT", 80))
     print(f"[WEB] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
