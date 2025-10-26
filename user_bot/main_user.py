@@ -25,27 +25,27 @@ async def startup():
     """Inicializa o bot ao iniciar o servidor"""
     global application
     
-    # Remove webhook antigo (polling)
-    await bot.delete_webhook()
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
+        
+        application.add_handler(handlers.start_handler)
+        application.add_handler(handlers.button_click_handler)
+        application.add_handler(handlers.inline_search_handler)
+        application.add_handler(handlers.watch_handler)
+        application.add_handler(handlers.text_handler)
+        application.add_handler(handlers.cancel_command_handler)
+        application.add_handler(handlers.help_command_handler)
+        application.add_handler(handlers.request_command_handler)
+        
+        await application.initialize()
+        print("✅ Bot de USUÁRIO (webhook) inicializado!")
+        
+    except Exception as e:
+        print(f"❌ ERRO NO STARTUP: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
     
-    # Registra novo webhook
-    await bot.set_webhook(url="https://banco-pedido.squareweb.app/webhook")
-    print("✅ Webhook registrado!")
-    
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    application.add_handler(handlers.start_handler)
-    application.add_handler(handlers.button_click_handler)
-    application.add_handler(handlers.inline_search_handler)
-    application.add_handler(handlers.watch_handler)
-    application.add_handler(handlers.text_handler)
-    application.add_handler(handlers.cancel_command_handler)
-    application.add_handler(handlers.help_command_handler)
-    application.add_handler(handlers.request_command_handler)
-    
-    await application.initialize()
-    print("✅ Bot de USUÁRIO (webhook) inicializado!")
-
 async def telegram_webhook(request: Request) -> Response:
     """Recebe updates do Telegram via webhook"""
     try:
