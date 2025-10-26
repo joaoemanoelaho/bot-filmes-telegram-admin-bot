@@ -1,60 +1,107 @@
 import sys
 import os
-import asyncio
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
-
 import logging
+import asyncio
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import Response
+from telegram import Update
 from telegram.ext import Application
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
-from telegram.error import NetworkError, Conflict
+
+# --- DEBUG PRINT ---
+print("[DEBUG-ADMIN] Versão do código: 1.1 (com Webhook e asyncio.Event)")
+# ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-async def main() -> None:
-    """Inicia o bot com retry automático"""
-    retry_count = 0
-    max_retries = 5
+application: Application = None
+APP_INITIALIZED = asyncio.Event()
+
+async def error_handler(update: object, context):
+    """Loga os erros causados pelos handlers."""
+    print(f"❌ [ADMIN] Erro no handler: {context.error}")
+    import traceback
+    traceback.print_exc()
+
+async def startup():
+    """Inicializa o bot ao iniciar o servidor"""
+    global application
     
-    while True:
-        try:
-            application = Application.builder().token(ADMIN_BOT_TOKEN).build()
+    print("[DEBUG-ADMIN] Função startup() iniciada.")
+    
+    try:
+        application = Application.builder().token(ADMIN_BOT_TOKEN).build()
+        
+        # Handlers do seu código antigo
+        application.add_handler(handlers.start_handler)
+        application.add_handler(handlers.button_click_handler)
+        application.add_handler(handlers.get_id_command_handler)
+        application.add_handler(handlers.admin_video_handler)
+        application.add_handler(handlers.get_chat_id_command_handler)
+        application.add_handler(handlers.channel_video_handler)
+        
+        print("[DEBUG-ADMIN] Adicionando error_handler...")
+        application.add_error_handler(error_handler)
+        
+        await application.initialize()
+        print("✅ Bot de ADMIN (webhook) inicializado!")
+        
+        print("[DEBUG-ADMIN] Sinalizando APP_INITIALIZED.set()")
+        APP_INITIALIZED.set() 
+        print("[DEBUG-ADMIN] Startup concluído.")
+        
+    except Exception as e:
+        print(f"❌ [ADMIN] ERRO NO STARTUP: {e}")
+        import traceback
+        traceback.print_exc()
+        raise
 
-            application.add_handler(handlers.start_handler)
-            application.add_handler(handlers.button_click_handler)
-            application.add_handler(handlers.get_id_command_handler)
-            application.add_handler(handlers.admin_video_handler)
-            application.add_handler(handlers.get_chat_id_command_handler)
-            application.add_handler(handlers.channel_video_handler)
+async def telegram_webhook(request: Request) -> Response:
+    """Recebe updates do Telegram via webhook"""
+    
+    print("[DEBUG-ADMIN] /webhook/admin recebido. Aguardando APP_INITIALIZED...")
+    await APP_INITIALIZED.wait() 
+    print("[DEBUG-ADMIN] APP_INITIALIZED está 'set'. Processando webhook.")
+    
+    try:
+        data = await request.json()
+        print(f"📨 [ADMIN] Dados recebidos no webhook: {data}")
+        
+        if not isinstance(data, dict) or 'update_id' not in data:
+            print(f"⚠️ [ADMIN] Dados inválidos recebidos: {type(data)}")
+            return Response("ok", status_code=200)
+        
+        update = Update.de_json(data, application.bot) 
+        await application.process_update(update)
+        print(f"✅ [ADMIN] Update processado: {data.get('update_id')}")
+        
+    except Exception as e:
+        print(f"❌ [ADMIN] Erro ao processar webhook do Telegram: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    return Response("ok", status_code=200)
 
-            print("✅ Bot de ADMIN iniciado e rodando (polling)!")
-            retry_count = 0
-            await application.run_polling(allowed_updates=["message", "channel_post"])
-            
-        except Conflict:
-            print("❌ Conflito: outro bot já está rodando. Aguardando...")
-            await asyncio.sleep(10)
-            
-        except NetworkError as e:
-            retry_count += 1
-            if retry_count >= max_retries:
-                print(f"❌ Muitas tentativas falhadas. Reiniciando em 30s...")
-                await asyncio.sleep(30)
-                retry_count = 0
-            else:
-                print(f"⚠️ Erro de rede ({retry_count}/{max_retries}): {e}. Tentando em 5s...")
-                await asyncio.sleep(5)
-                
-        except Exception as e:
-            print(f"❌ Erro inesperado: {e}. Reiniciando em 10s...")
-            await asyncio.sleep(10)
-            
+async def health_check(request: Request) -> Response:
+    """Verificação de saúde do servidor"""
+    return Response("Servidor do Bot ADMIN está online!", status_code=200)
+
+# Define as rotas
+routes = [
+    # Rota ÚNICA para o bot de admin
+    Route("/webhook/admin", endpoint=telegram_webhook, methods=["POST"]),
+    Route("/health", endpoint=health_check, methods=["GET"]),
+]
+
+app = Starlette(routes=routes, on_startup=[startup])
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("❌ Bot finalizado pelo usuário")
+    import uvicorn
+    
+    # O Square Cloud define a porta como 80, mas 8000 é um bom padrão local
+    port = int(os.environ.get("PORT", 8000)) 
+    print(f"[WEB-ADMIN] Servidor iniciando em http://0.0.0.0:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
