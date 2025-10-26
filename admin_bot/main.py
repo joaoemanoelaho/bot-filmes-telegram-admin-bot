@@ -51,6 +51,7 @@ async def main() -> None:
         except Exception as e:
             print(f"❌ Erro inesperado: {e}. Reiniciando em 10s...")
             await asyncio.sleep(10)
+            
 
 if __name__ == "__main__":
     try:
