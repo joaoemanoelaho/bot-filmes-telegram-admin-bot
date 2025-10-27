@@ -10,7 +10,6 @@ from pyrogram import Client
 from pyrogram.errors import FloodWait
 from hachoir.parser import createParser
 from hachoir.metadata import extractMetadata
-from hachoir.stream import FileInputStream
 
 # --- CONFIGURAÇÃO INICIAL ---
 # Garante que o config.py seja encontrado (copiado dos seus scripts)
@@ -96,10 +95,31 @@ def load_downloaded_log():
         return set()
 
 def add_to_downloaded_log(full_title_with_lang: str):
-    """Adiciona um filme ao histórico APÓS O UPLOAD."""
+    """
+    Adiciona um filme ao histórico APÓS O UPLOAD.
+    MODIFICADO: Se for 4K, adiciona a versão normal e a 4K.
+    """
     try:
+        # 1. Remove " 4K", " 4k", etc. de forma segura, mantendo o resto
+        # (flags=re.IGNORECASE) ignora se é 4K ou 4k
+        non_4k_title = re.sub(r'\s+4K\b', '', full_title_with_lang, flags=re.IGNORECASE).strip()
+        # Limpa espaços duplos que a remoção pode ter deixado
+        non_4k_title = re.sub(r'\s+', ' ', non_4k_title) 
+        
+        # 2. Usa um set para garantir que não haja duplicatas
+        # Se o título não for 4K, o set terá apenas 1 item.
+        # Se for 4K, terá 2 itens (o original e o non_4k_title).
+        titles_to_log = {full_title_with_lang, non_4k_title}
+
         with open(LOG_FILE, 'a', encoding='utf-8') as f:
-            f.write(full_title_with_lang + '\n')
+            for title in titles_to_log:
+                f.write(title + '\n')
+        
+        if len(titles_to_log) > 1:
+            log(f"Adicionadas versões (4K e normal) ao log: '{non_4k_title}'", "green")
+        else:
+            log(f"Adicionado ao log: '{full_title_with_lang}'", "green")
+
     except Exception as e:
         log(f"Erro ao salvar no log '{LOG_FILE}': {e}", "red")
 
@@ -282,6 +302,29 @@ def download_movie_sync(movie_info: dict) -> str:
             
     return None # Retorna None em caso de falha
 
+def scan_download_folder():
+    """
+    NOVO: Verifica a pasta de download por arquivos .mp4 existentes
+    e cria um mapa 'titulo' -> 'caminho_completo'.
+    """
+    log(f"Verificando pasta {DOWNLOAD_FOLDER} por arquivos existentes...", "blue")
+    local_files = {}
+    if not os.path.isdir(DOWNLOAD_FOLDER):
+        log(f"Pasta de download '{DOWNLOAD_FOLDER}' não existe, será criada.", "yellow")
+        return {}
+    
+    try:
+        for file in os.listdir(DOWNLOAD_FOLDER):
+            if file.endswith(".mp4"):
+                # O nome do arquivo sem .mp4 é o 'full_title_with_lang'
+                file_name_without_ext = os.path.splitext(file)[0]
+                full_path = os.path.join(DOWNLOAD_FOLDER, file)
+                local_files[file_name_without_ext] = full_path
+    except Exception as e:
+        log(f"Erro ao escanear a pasta de download: {e}", "red")
+    
+    return local_files
+
 async def upload_video(app, full_path, caption_text, cache, sem):
     """
     Versão universal 2.0.
@@ -413,9 +456,8 @@ async def main():
 
     log("Iniciando cliente Pyrogram a partir da String de Sessão...", "blue")
 
-    # Inicia o cliente usando a string, em vez do nome da sessão
     app = Client(
-        SESSION_NAME,  # Pode manter o nome, não afeta
+        SESSION_NAME,
         session_string=SESSION_STRING,
         api_id=API_ID,
         api_hash=API_HASH,
@@ -426,6 +468,13 @@ async def main():
     cache = await asyncio.to_thread(load_cache)
     downloaded_set = await asyncio.to_thread(load_downloaded_log)
     
+    # --- MUDANÇA (Req 2) ---
+    # Escaneia a pasta de download por arquivos .mp4 existentes ANTES de tudo
+    local_files_map = await asyncio.to_thread(scan_download_folder)
+    if local_files_map:
+        log(f"Encontrados {len(local_files_map)} arquivos .mp4 locais que serão priorizados para upload.", "green")
+    # --- FIM DA MUDANÇA ---
+
     # Garante que a pasta de download exista
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     
@@ -438,31 +487,33 @@ async def main():
         return
 
     # Filtra filmes que já estão no log
-    movies_to_download = [
+    # Este filtro continua o mesmo. A lógica de "pular download"
+    # será feita dentro do loop.
+    movies_to_process = [
         movie for movie in all_movies_in_list 
         if movie['full_title_with_lang'] not in downloaded_set
     ]
     
-    total_to_download = len(movies_to_download)
-    if total_to_download == 0:
-        log("\nNenhum filme novo para baixar. Seu catálogo está em dia!", "green")
+    total_to_process = len(movies_to_process)
+    if total_to_process == 0:
+        log("\nNenhum filme novo para processar. Seu catálogo está em dia!", "green")
         return
     
     # Embaralha a lista (do seu script de download)
-    random.shuffle(movies_to_download)
-    log(f"\nLista de {total_to_download} filmes pendentes foi embaralhada.", "yellow")
+    random.shuffle(movies_to_process)
+    log(f"\nLista de {total_to_process} filmes pendentes foi embaralhada.", "yellow")
     
     async with app:
         me = await app.get_me()
         log(f"✅ Logado como {me.first_name}", "green")
         log("=======================================================", "yellow")
+        
+        # ... (O bloco que lista os chats e verifica o canal continua igual) ...
         log("Listando os primeiros 100 chats que esta SESSION_STRING conhece:", "yellow")
         try:
             i = 0
-            # Itera sobre os "diálogos" (chats) da conta
             async for dialog in app.get_dialogs(limit=100):
-                # Imprime o Título e o ID de cada chat
-                log(f"  > Título: {dialog.chat.title} | ID: {dialog.chat.id}", "white")
+                log(f"   > Título: {dialog.chat.title} | ID: {dialog.chat.id}", "white")
                 i += 1
             log(f"Total de {i} chats encontrados (limitado a 100).", "yellow")
         except Exception as e:
@@ -470,50 +521,76 @@ async def main():
         log("=======================================================", "yellow")
         log(f"Verificando (priming) o canal de storage {STORAGE_CHANNEL_ID}...", "blue")
         try:
-            # Esta chamada força o Pyrogram a carregar o canal no cache
             await app.get_chat(STORAGE_CHANNEL_ID)
             log("Canal de storage verificado com sucesso.", "green")
         except Exception as e:
             log(f"❌ ERRO CRÍTICO: Não foi possível acessar o canal {STORAGE_CHANNEL_ID}.", "red")
             log(f"   Verifique se o ID está correto no config.py.", "red")
-            log(f"   Verifique se a conta 'BLITZ' é um MEMBRO deste canal/grupo.", "red")
+            log(f"   Verifique se a conta '{me.first_name}' é um MEMBRO deste canal/grupo.", "red")
             log(f"   Erro: {e}", "red")
-            sys.exit(1) # Para o script se não encontrar o canal
+            sys.exit(1)
+        # ... (Fim do bloco de verificação) ...
+            
         log(f"📁 Pasta de trabalho: {DOWNLOAD_FOLDER}", "white")
         log(f"🚀 Iniciando processo em lotes de {BATCH_SIZE}...", "blue")
 
-        # --- ESTE É O NOVO LOOP DE LOTE QUE VOCÊ DESCREVEU ---
-        for i in range(0, total_to_download, BATCH_SIZE):
+        # --- LOOP DE LOTE MODIFICADO (Req 2) ---
+        for i in range(0, total_to_process, BATCH_SIZE):
             # Pega um lote de filmes da lista
-            batch_movies = movies_to_download[i:i + BATCH_SIZE]
+            batch_movies = movies_to_process[i:i + BATCH_SIZE]
             
-            log(f"--- Processando Lote {i // BATCH_SIZE + 1} / {total_to_download // BATCH_SIZE + 1} (Tamanho: {BATCH_SIZE}) ---", "green")
+            log(f"--- Processando Lote {i // BATCH_SIZE + 1} / {total_to_process // BATCH_SIZE + 1} (Tamanho: {BATCH_SIZE}) ---", "green")
             
-            # --- LOOP MODIFICADO: Baixa 1, Envia 1 ---
+            # --- LOOP INTERNO MODIFICADO: Checa local, Baixa se precisar, Envia ---
             for movie in batch_movies:
-                log(f"\n--- Processando: {movie['full_title_with_lang']} ---", "white")
+                title = movie['full_title_with_lang']
+                caption = re.sub(r'\s+4K\b', '', title, flags=re.IGNORECASE).strip()
+                caption = re.sub(r'\s+', ' ', caption) # Limpa espaços duplos
                 
-                # Checa de novo caso o log tenha sido atualizado
-                if movie['full_title_with_lang'] in await asyncio.to_thread(load_downloaded_log):
-                    log(f"PULANDO (já no log): {movie['full_title_with_lang']}", "yellow")
+                log(f"\n--- Processando: {title} ---", "white")
+                
+                # Checa de novo o log (caso tenha sido atualizado por outra run)
+                current_log = await asyncio.to_thread(load_downloaded_log)
+                if title in current_log:
+                    log(f"PULANDO (já no log): {title}", "yellow")
                     continue
                 
-                # 1. FASE DE DOWNLOAD
-                file_path = await asyncio.to_thread(download_movie_sync, movie)
+                file_path = None
                 
-                # 2. FASE DE UPLOAD (IMEDIATA)
+                # --- MUDANÇA (Req 2) ---
+                # 1. Checa se o arquivo JÁ EXISTE localmente
+                file_path = local_files_map.get(title) # Tenta pegar do mapa
+                
+                if file_path and os.path.exists(file_path):
+                    log(f"Arquivo encontrado localmente. Pulando download.", "green")
+                    log(f"   -> {file_path}", "green")
+                else:
+                    if file_path:
+                        log(f"Arquivo estava no map, mas não existe mais. Baixando...", "yellow")
+                    
+                    # 2. FASE DE DOWNLOAD (se não foi encontrado localmente)
+                    log(f"Arquivo não encontrado localmente. Iniciando download...", "blue")
+                    file_path = await asyncio.to_thread(download_movie_sync, movie)
+                # --- FIM DA MUDANÇA ---
+
+                # 3. FASE DE UPLOAD (IMEDIATA)
                 if file_path:
-                    log(f"--- Iniciando Upload de '{movie['full_title_with_lang']}' ---", "blue")
-                    caption = movie['full_title_with_lang']
+                    log(f"--- Iniciando Upload de '{caption}' ---", "blue")
                     
                     # Tenta fazer o upload
                     success = await upload_video(app, file_path, caption, cache, sem)
                     
                     if success:
-                        log(f"Marcando '{caption}' como concluído no log.", "green")
+                        # --- MUDANÇA (Req 1) ---
+                        # A função add_to_downloaded_log agora cuida da lógica do 4K
                         await asyncio.to_thread(add_to_downloaded_log, caption)
                     else:
-                        log(f"Upload de '{caption}' falhou. Ele NÃO será marcado no log...", "red")
+                        # --- MUDANÇA (Req 2) ---
+                        log(f"Upload de '{caption}' falhou. O arquivo será mantido para a próxima vez.", "red")
+                        # Garante que o mapa de arquivos locais seja atualizado
+                        local_files_map[title] = file_path
+                else:
+                    log(f"Download de '{caption}' falhou. Pulando para o próximo.", "red")
                 
                 # Pausa aleatória (do seu downloader) entre cada FILME
                 sleep_time = random.randint(2, 5)
