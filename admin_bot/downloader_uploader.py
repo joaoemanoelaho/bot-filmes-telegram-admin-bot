@@ -455,6 +455,30 @@ async def main():
     async with app:
         me = await app.get_me()
         log(f"✅ Logado como {me.first_name}", "green")
+        log("=======================================================", "yellow")
+        log("Listando os primeiros 100 chats que esta SESSION_STRING conhece:", "yellow")
+        try:
+            i = 0
+            # Itera sobre os "diálogos" (chats) da conta
+            async for dialog in app.get_dialogs(limit=100):
+                # Imprime o Título e o ID de cada chat
+                log(f"  > Título: {dialog.chat.title} | ID: {dialog.chat.id}", "white")
+                i += 1
+            log(f"Total de {i} chats encontrados (limitado a 100).", "yellow")
+        except Exception as e:
+            log(f"Erro ao tentar listar os chats: {e}", "red")
+        log("=======================================================", "yellow")
+        log(f"Verificando (priming) o canal de storage {STORAGE_CHANNEL_ID}...", "blue")
+        try:
+            # Esta chamada força o Pyrogram a carregar o canal no cache
+            await app.get_chat(STORAGE_CHANNEL_ID)
+            log("Canal de storage verificado com sucesso.", "green")
+        except Exception as e:
+            log(f"❌ ERRO CRÍTICO: Não foi possível acessar o canal {STORAGE_CHANNEL_ID}.", "red")
+            log(f"   Verifique se o ID está correto no config.py.", "red")
+            log(f"   Verifique se a conta 'BLITZ' é um MEMBRO deste canal/grupo.", "red")
+            log(f"   Erro: {e}", "red")
+            sys.exit(1) # Para o script se não encontrar o canal
         log(f"📁 Pasta de trabalho: {DOWNLOAD_FOLDER}", "white")
         log(f"🚀 Iniciando processo em lotes de {BATCH_SIZE}...", "blue")
 

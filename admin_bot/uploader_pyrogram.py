@@ -218,6 +218,17 @@ async def main():
     async with app:
         me = await app.get_me()
         log(f"✅ Logado como {me.first_name}", "green")
+        log(f"Verificando (priming) o canal de storage {STORAGE_CHANNEL_ID}...", "blue")
+        try:
+            # Esta chamada força o Pyrogram a carregar o canal no cache
+            await app.get_chat(STORAGE_CHANNEL_ID)
+            log("Canal de storage verificado com sucesso.", "green")
+        except Exception as e:
+            log(f"❌ ERRO CRÍTICO: Não foi possível acessar o canal {STORAGE_CHANNEL_ID}.", "red")
+            log(f"   Verifique se o ID está correto no config.py.", "red")
+            log(f"   Verifique se a conta 'BLITZ' é um MEMBRO deste canal/grupo.", "red")
+            log(f"   Erro: {e}", "red")
+            sys.exit(1) # Para o script se não encontrar o canal
         log(f"📁 Monitorando: {MONITOR_FOLDER}", "white")
         log(f"🚀 Modo prioridade total (1 upload por vez).", "yellow")
 
