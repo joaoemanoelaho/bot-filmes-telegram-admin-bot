@@ -259,7 +259,10 @@ def download_movie_sync(movie_info: dict) -> str:
             '--retries', '20', 
             '--fragment-retries', '20',
             '--no-check-certificates', 
-            '--socket-timeout', '30',
+            '--socket-timeout', '120',         # <-- AUMENTADO
+            '--http-chunk-size', '10M',      # <-- NOVO
+            '--buffer-size', '16K',          # <-- NOVO (ajuda)
+            '--no-keep-fragments',           # <-- NOVO (limpeza)
             '--user-agent', USER_AGENT,
             '--add-header', f'Referer: {REFERER_URL}',
             '--add-header', f'Origin: {REFERER_URL}',
