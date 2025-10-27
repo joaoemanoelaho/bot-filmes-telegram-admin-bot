@@ -10,7 +10,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 try:
-    from config import M3U_FILE_PATH, DOWNLOAD_FOLDER, LOG_FILE, REFERER_URL, USER_AGENT
+    from config import M3U_FILE_PATH, DOWNLOAD_FOLDER, LOG_FILE, REFERER_URL, USER_AGENT, PROXY_URL
 except ImportError:
     print("ERRO: Não foi possível encontrar o arquivo 'config_downloader.py'.")
     print("Por favor, crie o arquivo com as variáveis M3U_FILE_PATH, DOWNLOAD_FOLDER, etc.")
@@ -119,8 +119,14 @@ def download_movie(movie_info: dict):
             '--user-agent', USER_AGENT,
             '--add-header', f'Referer: {REFERER_URL}',
             '--add-header', f'Origin: {REFERER_URL}',
-            url
         ]
+
+        if PROXY_URL:
+            print("+++ Usando Proxy para esta requisição +++")
+            command.extend(['--proxy', PROXY_URL])
+        # --- FIM DA MUDANÇA ---
+            
+        command.append(url)
         
         subprocess.run(command, check=True)
 

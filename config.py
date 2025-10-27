@@ -30,6 +30,8 @@ REFERER_URL = os.getenv("REFERER_URL")
 
 USER_AGENT = os.getenv("USER_AGENT") 
 
+PROXY_URL = os.getenv("PROXY_URL")
+
 # Validações
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN não configurado!")
