@@ -158,24 +158,27 @@ def get_video_metadata_hachoir(file_path):
     """
     Extrai metadados usando Hachoir (pure Python),
     ideal para ambientes restritos como o Square Cloud.
+    VERSÃO 2.1 - Corrigido o TypeError
     """
-    log(f"Tentando extrair metadados com Hachoir...", "blue")
+    log(f"Tentando extrair metadados com Hachoir (v2.1)...", "blue")
     duration, width, height = 0, 0, 0
     try:
         # Hachoir precisa do 'real path'
         real_path = os.path.realpath(file_path)
         
-        # Usar FileInputStream para lidar com arquivos grandes de forma eficiente
-        stream = FileInputStream(real_path)
-        with stream:
-            # Temos que passar o 'filename' para o parser
-            parser = createParser(stream, filename=real_path)
+        # --- CORREÇÃO ---
+        # Removemos o FileInputStream e passamos o caminho direto.
+        # O createParser abre o arquivo sozinho.
+        parser = createParser(real_path) 
+        # --- FIM DA CORREÇÃO ---
         
         if not parser:
             log(f"Hachoir: Não foi possível criar o parser.", "red")
             return None, None, None
 
-        metadata = extractMetadata(parser)
+        # Usamos 'with parser' para garantir que ele feche o arquivo
+        with parser: 
+            metadata = extractMetadata(parser)
         
         if not metadata:
             log(f"Hachoir: Não foi possível extrair metadados.", "red")
@@ -202,7 +205,7 @@ def get_video_metadata_hachoir(file_path):
         import traceback
         log(traceback.format_exc(), "yellow")
         return None, None, None
-
+    
 def progress_callback(current, total):
     """Callback de progresso (síncrono)."""
     pct = (current / total) * 100
