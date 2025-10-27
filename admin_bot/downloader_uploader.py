@@ -273,27 +273,43 @@ def download_movie_sync(movie_info: dict) -> str:
 
 async def upload_video(app, full_path, caption_text, cache, sem):
     """
-    Função de upload MODIFICADA para Square Cloud.
-    Remove o uso de ffprobe/ffmpeg para evitar 'Permission denied'.
+    Versão universal da função de upload.
+    Tenta usar FFprobe/FFmpeg. Se falhar (ex: Square Cloud),
+    envia o vídeo sem metadados.
     """
     async with sem:
         try:
             file_size_mb = os.path.getsize(full_path) / (1024**2)
-            MAX_FILE_SIZE_MB = 3900 
+            MAX_FILE_SIZE_MB = 3900
             
             if file_size_mb > MAX_FILE_SIZE_MB:
                 log(f"⚠️  Arquivo muito grande ({file_size_mb:.0f}MB > {MAX_FILE_SIZE_MB}MB): {caption_text}", "yellow")
                 log(f"   Deletando arquivo...", "yellow")
                 os.remove(full_path)
-                return False # Falha no upload
+                return False
 
-            # --- BLOCO FFPROBE/FFMPEG REMOVIDO ---
-            # Não tentamos mais pegar metadados ou criar thumbnails,
-            # pois não temos permissão para rodar .exe no Square Cloud.
-            # O Pyrogram vai tentar adivinhar isso sozinho.
-            # 
-            # (Todo o bloco que chamava get_video_metadata e create_thumbnail foi removido)
-            # --- FIM DA REMOÇÃO ---
+            # --- LÓGICA DO FFPROBE RESTAURADA ---
+            duration, width, height = 0, 0, 0
+            thumb = None
+            
+            try:
+                # Tenta obter metadados (Funciona no local, falha no Square Cloud)
+                if full_path in cache:
+                    duration, width, height = cache[full_path].values()
+                    log(f"Metadados cacheados: {duration}s, {width}x{height}", "yellow")
+                else:
+                    duration, width, height = await asyncio.to_thread(get_video_metadata, full_path)
+                    if not duration:
+                        duration, width, height = 0, 0, 0
+                    cache[full_path] = {"duration": duration, "width": width, "height": height}
+                    await asyncio.to_thread(save_cache, cache)
+                
+                if duration > 0:
+                    thumb = await asyncio.to_thread(create_thumbnail, full_path, duration)
+            except Exception as e:
+                log(f"AVISO: Falha ao obter metadados (provavelmente no Square Cloud): {e}", "yellow")
+                duration, width, height = 0, 0, 0 # Reseta para zero em caso de falha
+            # --- FIM DA LÓGICA RESTAURADA ---
 
             backoff = 5
             retry_count = 0
@@ -303,59 +319,67 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                 try:
                     log(f"🔄 Enviando {caption_text}...", "blue")
                     
-                    # --- MUDANÇA CRÍTICA ---
-                    # Removemos duration, width, height, e thumb.
-                    # O Pyrogram vai detectar isso automaticamente.
-                    await app.send_video(
-                        chat_id=STORAGE_CHANNEL_ID,
-                        video=full_path,
-                        caption=caption_text,
-                        progress=progress_callback
-                    )
+                    # --- MUDANÇA CRÍTICA: LÓGICA INTELIGENTE ---
+                    # Constrói os argumentos para send_video
+                    send_kwargs = {
+                        "chat_id": STORAGE_CHANNEL_ID,
+                        "video": full_path,
+                        "caption": caption_text,
+                        "progress": progress_callback
+                    }
+                    
+                    # Só adiciona os metadados SE eles foram encontrados
+                    if duration > 0 and width > 0:
+                        send_kwargs["duration"] = duration
+                        send_kwargs["width"] = width
+                        send_kwargs["height"] = height
+                    if thumb:
+                        send_kwargs["thumb"] = thumb
+                    
+                    # Envia o vídeo com ou sem metadados
+                    await app.send_video(**send_kwargs)
                     # --- FIM DA MUDANÇA ---
                     
                     log(f"\n✅ Upload concluído: {caption_text}", "green")
-                    os.remove(full_path) # Deleta o vídeo
-                    
-                    # (A lógica de deletar o thumb também foi removida, 
-                    # pois ele não é mais criado)
+                    os.remove(full_path)
+                    if thumb and os.path.exists(thumb):
+                        os.remove(thumb)
 
                     wait_time = random.uniform(MIN_UPLOAD_INTERVAL, MAX_UPLOAD_INTERVAL)
                     minutes = wait_time / 60
                     log(f"⏱️  Aguardando {minutes:.1f} minutos até próximo upload...", "yellow")
                     await asyncio.sleep(wait_time)
-                    return True # Sucesso no upload
+                    return True
                     
                 except FloodWait as e:
                     log(f"\n⚠️ FloodWait: Telegram pediu para esperar {e.value}s", "yellow")
                     await asyncio.sleep(e.value + random.uniform(5, 15))
                     retry_count += 1
-                    
+                
+                # --- ADICIONANDO CAPTURA DE ERRO DE CONEXÃO ---
                 except (OSError, ConnectionError) as e:
-                    if "10065" in str(e): 
-                        retry_count += 1
-                        log(f"\n🔌 Erro de conexão (tentativa {retry_count}/{max_retries})", "yellow")
-                        if retry_count < max_retries:
-                            log(f"Reconectando em {backoff}s...", "yellow")
-                            await asyncio.sleep(backoff)
-                            backoff = min(backoff * 2, 60)
-                        else:
-                            log(f"❌ Falha após {max_retries} tentativas", "red")
-                            break
+                    retry_count += 1
+                    log(f"\n🔌 Erro de conexão/rede (tentativa {retry_count}/{max_retries}): {e}", "yellow")
+                    if retry_count < max_retries:
+                        log(f"Reconectando em {backoff}s...", "yellow")
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, 60)
                     else:
-                        raise
+                        log(f"❌ Falha após {max_retries} tentativas", "red")
+                        break
+                # --- FIM DA ADIÇÃO ---
                         
                 except Exception as e:
                     log(f"❌ Erro no upload ({caption_text}): {e}", "red")
                     await asyncio.sleep(backoff)
                     backoff = min(backoff * 2, 120)
             
-            return False # Falha no upload
+            return False
 
         except Exception as e:
             log(f"Erro inesperado em upload_video: {e}", "red")
-            return False # Falha no upload
-        
+            return False
+             
 # =================================================================
 # FUNÇÃO PRINCIPAL (O ORQUESTRADOR)
 # =================================================================
