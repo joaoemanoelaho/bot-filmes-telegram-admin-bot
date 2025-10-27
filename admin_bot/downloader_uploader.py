@@ -8,6 +8,9 @@ import json
 import asyncio
 from pyrogram import Client
 from pyrogram.errors import FloodWait
+from hachoir.parser import createParser
+from hachoir.metadata import extractMetadata
+from hachoir.stream import FileInputStream
 
 # --- CONFIGURAÇÃO INICIAL ---
 # Garante que o config.py seja encontrado (copiado dos seus scripts)
@@ -151,49 +154,54 @@ def parse_m3u(file_path: str):
 # BLOCO DE PROCESSAMENTO DE VÍDEO (do Uploader)
 # =================================================================
 
-def get_video_metadata(file_path):
-    """Extrai metadados usando FFprobe (síncrono)."""
-    if not os.path.exists(FFPROBE_PATH):
-        log(f"ERRO: ffprobe.exe não encontrado em {FFPROBE_PATH}", "red")
-        return None, None, None
+def get_video_metadata_hachoir(file_path):
+    """
+    Extrai metadados usando Hachoir (pure Python),
+    ideal para ambientes restritos como o Square Cloud.
+    """
+    log(f"Tentando extrair metadados com Hachoir...", "blue")
+    duration, width, height = 0, 0, 0
     try:
-        command = [
-            FFPROBE_PATH, "-v", "quiet", "-print_format", "json", "-show_streams", file_path
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, check=True)
-        data = json.loads(result.stdout)
-        video_stream = next(
-            (s for s in data.get("streams", []) if s.get("codec_type") == "video"), None
-        )
-        if not video_stream:
-            log("Stream de vídeo não encontrado.", "red")
+        # Hachoir precisa do 'real path'
+        real_path = os.path.realpath(file_path)
+        
+        # Usar FileInputStream para lidar com arquivos grandes de forma eficiente
+        stream = FileInputStream(real_path)
+        with stream:
+            # Temos que passar o 'filename' para o parser
+            parser = createParser(stream, filename=real_path)
+        
+        if not parser:
+            log(f"Hachoir: Não foi possível criar o parser.", "red")
             return None, None, None
-        duration = int(float(video_stream.get("duration", 0)))
-        width = int(video_stream.get("width", 0))
-        height = int(video_stream.get("height", 0))
-        if duration == 0 or width == 0: return None, None, None
-        return duration, width, height
-    except Exception as e:
-        log(f"Erro no FFprobe: {e}", "red")
-        return None, None, None
 
-def create_thumbnail(file_path, duration):
-    """Cria thumbnail com FFmpeg (síncrono)."""
-    if not os.path.exists(FFMPEG_PATH):
-        log(f"ERRO: ffmpeg.exe não encontrado em {FFMPEG_PATH}", "red")
-        return None
-    try:
-        thumb_time = min(5, int(duration * 0.1))
-        command = [
-            FFMPEG_PATH, "-i", file_path, "-ss", str(thumb_time),
-            "-vframes", "1", THUMBNAIL_PATH, "-y"
-        ]
-        subprocess.run(command, capture_output=True, check=True)
-        if os.path.exists(THUMBNAIL_PATH):
-            return THUMBNAIL_PATH
+        metadata = extractMetadata(parser)
+        
+        if not metadata:
+            log(f"Hachoir: Não foi possível extrair metadados.", "red")
+            return None, None, None
+
+        # Extrai os dados
+        if metadata.has("duration"):
+            # Hachoir retorna timedelta, precisamos de segundos
+            duration = int(metadata.get("duration").total_seconds())
+        if metadata.has("width"):
+            width = metadata.get("width")
+        if metadata.has("height"):
+            height = metadata.get("height")
+        
+        if duration == 0 or width == 0:
+            log(f"Hachoir: Metadados incompletos (d={duration}, w={width}).", "yellow")
+            return None, None, None
+        
+        log(f"Metadados extraídos (Hachoir): {width}x{height}, {duration}s", "green")
+        return duration, width, height
+        
     except Exception as e:
-        log(f"Erro no FFmpeg: {e}", "red")
-    return None
+        log(f"Erro no Hachoir: {repr(e)}", "red")
+        import traceback
+        log(traceback.format_exc(), "yellow")
+        return None, None, None
 
 def progress_callback(current, total):
     """Callback de progresso (síncrono)."""
@@ -273,9 +281,10 @@ def download_movie_sync(movie_info: dict) -> str:
 
 async def upload_video(app, full_path, caption_text, cache, sem):
     """
-    Versão universal da função de upload.
-    Tenta usar FFprobe/FFmpeg. Se falhar (ex: Square Cloud),
-    envia o vídeo sem metadados.
+    Versão universal 2.0.
+    Usa Hachoir para metadados (pure Python).
+    Remove FFMPEG (thumbnails).
+    Adiciona logging de erro detalhado.
     """
     async with sem:
         try:
@@ -288,28 +297,28 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                 os.remove(full_path)
                 return False
 
-            # --- LÓGICA DO FFPROBE RESTAURADA ---
+            # --- LÓGICA DE METADADOS 2.0 (USA HACHOIR) ---
             duration, width, height = 0, 0, 0
-            thumb = None
-            
+            thumb = None # Não vamos mais gerar thumbnails
+
             try:
-                # Tenta obter metadados (Funciona no local, falha no Square Cloud)
                 if full_path in cache:
                     duration, width, height = cache[full_path].values()
                     log(f"Metadados cacheados: {duration}s, {width}x{height}", "yellow")
                 else:
-                    duration, width, height = await asyncio.to_thread(get_video_metadata, full_path)
+                    # Chama a nova função Hachoir
+                    duration, width, height = await asyncio.to_thread(get_video_metadata_hachoir, full_path)
                     if not duration:
                         duration, width, height = 0, 0, 0
+                    
+                    # Salva no cache
                     cache[full_path] = {"duration": duration, "width": width, "height": height}
                     await asyncio.to_thread(save_cache, cache)
-                
-                if duration > 0:
-                    thumb = await asyncio.to_thread(create_thumbnail, full_path, duration)
+            
             except Exception as e:
-                log(f"AVISO: Falha ao obter metadados (provavelmente no Square Cloud): {e}", "yellow")
-                duration, width, height = 0, 0, 0 # Reseta para zero em caso de falha
-            # --- FIM DA LÓGICA RESTAURADA ---
+                log(f"AVISO: Falha ao obter metadados com Hachoir: {e}", "yellow")
+                duration, width, height = 0, 0, 0 # Reseta
+            # --- FIM DA LÓGICA 2.0 ---
 
             backoff = 5
             retry_count = 0
@@ -319,8 +328,6 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                 try:
                     log(f"🔄 Enviando {caption_text}...", "blue")
                     
-                    # --- MUDANÇA CRÍTICA: LÓGICA INTELIGENTE ---
-                    # Constrói os argumentos para send_video
                     send_kwargs = {
                         "chat_id": STORAGE_CHANNEL_ID,
                         "video": full_path,
@@ -328,22 +335,20 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                         "progress": progress_callback
                     }
                     
-                    # Só adiciona os metadados SE eles foram encontrados
+                    # Só adiciona os metadados SE o Hachoir os encontrou
                     if duration > 0 and width > 0:
+                        log(f"Enviando com metadados (Hachoir): {duration}s, {width}x{height}", "blue")
                         send_kwargs["duration"] = duration
                         send_kwargs["width"] = width
                         send_kwargs["height"] = height
-                    if thumb:
-                        send_kwargs["thumb"] = thumb
-                    
-                    # Envia o vídeo com ou sem metadados
+                    else:
+                        log(f"Enviando SEM metadados (Hachoir falhou ou metadados incompletos)", "yellow")
+
                     await app.send_video(**send_kwargs)
-                    # --- FIM DA MUDANÇA ---
                     
                     log(f"\n✅ Upload concluído: {caption_text}", "green")
                     os.remove(full_path)
-                    if thumb and os.path.exists(thumb):
-                        os.remove(thumb)
+                    # (lógica do thumb removida)
 
                     wait_time = random.uniform(MIN_UPLOAD_INTERVAL, MAX_UPLOAD_INTERVAL)
                     minutes = wait_time / 60
@@ -356,10 +361,12 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                     await asyncio.sleep(e.value + random.uniform(5, 15))
                     retry_count += 1
                 
-                # --- ADICIONANDO CAPTURA DE ERRO DE CONEXÃO ---
+                # --- LOGGING DE ERRO MELHORADO (O que você pediu) ---
                 except (OSError, ConnectionError) as e:
                     retry_count += 1
-                    log(f"\n🔌 Erro de conexão/rede (tentativa {retry_count}/{max_retries}): {e}", "yellow")
+                    log(f"\n🔌 ERRO DE REDE (Tentativa {retry_count}/{max_retries}):", "red")
+                    log(f"   TIPO: {type(e)}", "red")
+                    log(f"   ERRO: {repr(e)}", "red") # Imprime o erro
                     if retry_count < max_retries:
                         log(f"Reconectando em {backoff}s...", "yellow")
                         await asyncio.sleep(backoff)
@@ -367,19 +374,28 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                     else:
                         log(f"❌ Falha após {max_retries} tentativas", "red")
                         break
-                # --- FIM DA ADIÇÃO ---
-                        
+                
                 except Exception as e:
-                    log(f"❌ Erro no upload ({caption_text}): {e}", "red")
-                    await asyncio.sleep(backoff)
-                    backoff = min(backoff * 2, 120)
+                    retry_count += 1
+                    log(f"\n❌ ERRO INESPERADO NO UPLOAD (Tentativa {retry_count}/{max_retries}):", "red")
+                    log(f"   TIPO: {type(e)}", "red")
+                    log(f"   ERRO: {repr(e)}", "red") # Imprime o erro
+                    import traceback
+                    log(traceback.format_exc(), "yellow") # Log completo
+                    
+                    if retry_count < max_retries:
+                        await asyncio.sleep(backoff)
+                        backoff = min(backoff * 2, 120)
+                    else:
+                        log(f"❌ Falha após {max_retries} tentativas", "red")
+                        break
             
-            return False
+            return False # Se saiu do loop, o upload falhou
 
         except Exception as e:
-            log(f"Erro inesperado em upload_video: {e}", "red")
+            log(f"Erro inesperado (fora do loop de retry): {e}", "red")
             return False
-             
+        
 # =================================================================
 # FUNÇÃO PRINCIPAL (O ORQUESTRADOR)
 # =================================================================

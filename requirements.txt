@@ -10,3 +10,4 @@ pyrogram
 tgcrypto
 python-dotenv
 flask
+hachoir
