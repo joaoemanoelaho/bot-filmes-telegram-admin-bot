@@ -334,11 +334,12 @@ async def upload_video(app, full_path, caption_text, cache, sem):
     Usa Hachoir para metadados (pure Python).
     Remove FFMPEG (thumbnails).
     Adiciona logging de erro detalhado.
+    MODIFICADO: Removido o sleep; agora ele só retorna True.
     """
     async with sem:
         try:
             file_size_mb = os.path.getsize(full_path) / (1024**2)
-            MAX_FILE_SIZE_MB = 3900
+            MAX_FILE_SIZE_MB = 2900
             
             if file_size_mb > MAX_FILE_SIZE_MB:
                 log(f"⚠️  Arquivo muito grande ({file_size_mb:.0f}MB > {MAX_FILE_SIZE_MB}MB): {caption_text}", "yellow")
@@ -348,25 +349,21 @@ async def upload_video(app, full_path, caption_text, cache, sem):
 
             # --- LÓGICA DE METADADOS 2.0 (USA HACHOIR) ---
             duration, width, height = 0, 0, 0
-            thumb = None # Não vamos mais gerar thumbnails
-
             try:
                 if full_path in cache:
                     duration, width, height = cache[full_path].values()
                     log(f"Metadados cacheados: {duration}s, {width}x{height}", "yellow")
                 else:
-                    # Chama a nova função Hachoir
                     duration, width, height = await asyncio.to_thread(get_video_metadata_hachoir, full_path)
                     if not duration:
                         duration, width, height = 0, 0, 0
                     
-                    # Salva no cache
                     cache[full_path] = {"duration": duration, "width": width, "height": height}
                     await asyncio.to_thread(save_cache, cache)
             
             except Exception as e:
                 log(f"AVISO: Falha ao obter metadados com Hachoir: {e}", "yellow")
-                duration, width, height = 0, 0, 0 # Reseta
+                duration, width, height = 0, 0, 0
             # --- FIM DA LÓGICA 2.0 ---
 
             backoff = 5
@@ -384,7 +381,6 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                         "progress": progress_callback
                     }
                     
-                    # Só adiciona os metadados SE o Hachoir os encontrou
                     if duration > 0 and width > 0:
                         log(f"Enviando com metadados (Hachoir): {duration}s, {width}x{height}", "blue")
                         send_kwargs["duration"] = duration
@@ -397,25 +393,21 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                     
                     log(f"\n✅ Upload concluído: {caption_text}", "green")
                     os.remove(full_path)
-                    # (lógica do thumb removida)
-
-                    wait_time = random.uniform(MIN_UPLOAD_INTERVAL, MAX_UPLOAD_INTERVAL)
-                    minutes = wait_time / 60
-                    log(f"⏱️  Aguardando {minutes:.1f} minutos até próximo upload...", "yellow")
-                    await asyncio.sleep(wait_time)
-                    return True
                     
+                    # --- LÓGICA DE ESPERA REMOVIDA DAQUI ---
+                    
+                    return True
+                        
                 except FloodWait as e:
                     log(f"\n⚠️ FloodWait: Telegram pediu para esperar {e.value}s", "yellow")
                     await asyncio.sleep(e.value + random.uniform(5, 15))
                     retry_count += 1
                 
-                # --- LOGGING DE ERRO MELHORADO (O que você pediu) ---
                 except (OSError, ConnectionError) as e:
                     retry_count += 1
                     log(f"\n🔌 ERRO DE REDE (Tentativa {retry_count}/{max_retries}):", "red")
                     log(f"   TIPO: {type(e)}", "red")
-                    log(f"   ERRO: {repr(e)}", "red") # Imprime o erro
+                    log(f"   ERRO: {repr(e)}", "red") 
                     if retry_count < max_retries:
                         log(f"Reconectando em {backoff}s...", "yellow")
                         await asyncio.sleep(backoff)
@@ -428,9 +420,9 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                     retry_count += 1
                     log(f"\n❌ ERRO INESPERADO NO UPLOAD (Tentativa {retry_count}/{max_retries}):", "red")
                     log(f"   TIPO: {type(e)}", "red")
-                    log(f"   ERRO: {repr(e)}", "red") # Imprime o erro
+                    log(f"   ERRO: {repr(e)}", "red") 
                     import traceback
-                    log(traceback.format_exc(), "yellow") # Log completo
+                    log(traceback.format_exc(), "yellow") 
                     
                     if retry_count < max_retries:
                         await asyncio.sleep(backoff)
@@ -467,31 +459,21 @@ async def main():
         workers=WORKER_COUNT
     )
 
-    # Carrega o cache e o log usando asyncio.to_thread para não bloquear
     cache = await asyncio.to_thread(load_cache)
     downloaded_set = await asyncio.to_thread(load_downloaded_log)
-    
-    # --- MUDANÇA (Req 2) ---
-    # Escaneia a pasta de download por arquivos .mp4 existentes ANTES de tudo
     local_files_map = await asyncio.to_thread(scan_download_folder)
     if local_files_map:
         log(f"Encontrados {len(local_files_map)} arquivos .mp4 locais que serão priorizados para upload.", "green")
-    # --- FIM DA MUDANÇA ---
 
-    # Garante que a pasta de download exista
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     
     sem = asyncio.Semaphore(MAX_CONCURRENT_UPLOADS)
 
-    # Carrega a lista de filmes (também em thread)
     all_movies_in_list = await asyncio.to_thread(parse_m3u, M3U_FILE_PATH)
     if not all_movies_in_list:
         log("Nenhum filme filtrado encontrado na lista M3U.", "red")
         return
 
-    # Filtra filmes que já estão no log
-    # Este filtro continua o mesmo. A lógica de "pular download"
-    # será feita dentro do loop.
     movies_to_process = [
         movie for movie in all_movies_in_list 
         if movie['full_title_with_lang'] not in downloaded_set
@@ -502,16 +484,15 @@ async def main():
         log("\nNenhum filme novo para processar. Seu catálogo está em dia!", "green")
         return
     
-    # Embaralha a lista (do seu script de download)
     random.shuffle(movies_to_process)
     log(f"\nLista de {total_to_process} filmes pendentes foi embaralhada.", "yellow")
     
     async with app:
         me = await app.get_me()
         log(f"✅ Logado como {me.first_name}", "green")
-        log("=======================================================", "yellow")
         
         # ... (O bloco que lista os chats e verifica o canal continua igual) ...
+        log("=======================================================", "yellow")
         log("Listando os primeiros 100 chats que esta SESSION_STRING conhece:", "yellow")
         try:
             i = 0
@@ -537,22 +518,21 @@ async def main():
         log(f"📁 Pasta de trabalho: {DOWNLOAD_FOLDER}", "white")
         log(f"🚀 Iniciando processo em lotes de {BATCH_SIZE}...", "blue")
 
-        # --- LOOP DE LOTE MODIFICADO (Req 2) ---
         for i in range(0, total_to_process, BATCH_SIZE):
-            # Pega um lote de filmes da lista
             batch_movies = movies_to_process[i:i + BATCH_SIZE]
             
             log(f"--- Processando Lote {i // BATCH_SIZE + 1} / {total_to_process // BATCH_SIZE + 1} (Tamanho: {BATCH_SIZE}) ---", "green")
             
-            # --- LOOP INTERNO MODIFICADO: Checa local, Baixa se precisar, Envia ---
             for movie in batch_movies:
                 title = movie['full_title_with_lang']
+                
                 caption = re.sub(r'\s+4K\b', '', title, flags=re.IGNORECASE).strip()
-                caption = re.sub(r'\s+', ' ', caption) # Limpa espaços duplos
+                caption = re.sub(r'\s+', ' ', caption) 
                 
                 log(f"\n--- Processando: {title} ---", "white")
+                if title != caption:
+                    log(f"--- (Caption do Telegram será: {caption}) ---", "yellow")
                 
-                # Checa de novo o log (caso tenha sido atualizado por outra run)
                 current_log = await asyncio.to_thread(load_downloaded_log)
                 if title in current_log:
                     log(f"PULANDO (já no log): {title}", "yellow")
@@ -560,9 +540,7 @@ async def main():
                 
                 file_path = None
                 
-                # --- MUDANÇA (Req 2) ---
-                # 1. Checa se o arquivo JÁ EXISTE localmente
-                file_path = local_files_map.get(title) # Tenta pegar do mapa
+                file_path = local_files_map.get(title) 
                 
                 if file_path and os.path.exists(file_path):
                     log(f"Arquivo encontrado localmente. Pulando download.", "green")
@@ -571,39 +549,47 @@ async def main():
                     if file_path:
                         log(f"Arquivo estava no map, mas não existe mais. Baixando...", "yellow")
                     
-                    # 2. FASE DE DOWNLOAD (se não foi encontrado localmente)
                     log(f"Arquivo não encontrado localmente. Iniciando download...", "blue")
                     file_path = await asyncio.to_thread(download_movie_sync, movie)
-                # --- FIM DA MUDANÇA ---
-
-                # 3. FASE DE UPLOAD (IMEDIATA)
+                
+                
+                # --- LÓGICA DE PAUSA MOVIDA PARA CÁ ---
+                upload_succeeded = False # Flag
+                
                 if file_path:
                     log(f"--- Iniciando Upload de '{caption}' ---", "blue")
                     
-                    # Tenta fazer o upload
+                    # 1. Upload (função não dorme mais)
                     success = await upload_video(app, file_path, caption, cache, sem)
                     
                     if success:
-                        # --- MUDANÇA (Req 1) ---
-                        # A função add_to_downloaded_log agora cuida da lógica do 4K
-                        await asyncio.to_thread(add_to_downloaded_log, caption)
+                        upload_succeeded = True # Seta a flag
+                        
+                        # 2. Log (IMEDIATO)
+                        await asyncio.to_thread(add_to_downloaded_log, title)
+                        
+                        # 3. SLEEP (Agora está no main)
+                        wait_time = random.uniform(MIN_UPLOAD_INTERVAL, MAX_UPLOAD_INTERVAL)
+                        minutes = wait_time / 60
+                        log(f"⏱️  Aguardando {minutes:.1f} minutos até próximo upload...", "yellow")
+                        await asyncio.sleep(wait_time)
+                        
                     else:
-                        # --- MUDANÇA (Req 2) ---
                         log(f"Upload de '{caption}' falhou. O arquivo será mantido para a próxima vez.", "red")
-                        # Garante que o mapa de arquivos locais seja atualizado
                         local_files_map[title] = file_path
                 else:
                     log(f"Download de '{caption}' falhou. Pulando para o próximo.", "red")
                 
-                # Pausa aleatória (do seu downloader) entre cada FILME
-                sleep_time = random.randint(2, 5)
-                log(f"Pausa curta ({sleep_time}s) antes do próximo item do lote...", "yellow")
-                await asyncio.sleep(sleep_time) 
+                # Só faz a pausa CURTA se o upload NÃO aconteceu (falha no down/up)
+                if not upload_succeeded:
+                    sleep_time = random.randint(2, 5)
+                    log(f"Pausa curta ({sleep_time}s) antes do próximo item do lote...", "yellow")
+                    await asyncio.sleep(sleep_time) 
             
             log(f"\n--- Fim do Lote {i // BATCH_SIZE + 1} ---", "green")
     
     log("\nVerificação concluída. Todos os lotes foram processados.", "green")
-
+    
 # ========================
 # ENTRY POINT
 # ========================
