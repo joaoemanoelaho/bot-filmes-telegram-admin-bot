@@ -28,7 +28,7 @@ except ImportError:
     sys.exit(1)
 
 # --- NOVAS CONFIGURAÇÕES DO SCRIPT ---
-BATCH_SIZE = 5  # O TAMANHO DO LOTE QUE VOCÊ PEDIU
+BATCH_SIZE = 2  # O TAMANHO DO LOTE QUE VOCÊ PEDIU
 SESSION_NAME = "minha_conta_de_upload"
 WORKER_COUNT = 16 # Do seu script de upload
 MAX_CONCURRENT_UPLOADS = 1 # Do seu script de upload
@@ -426,49 +426,40 @@ async def main():
             # Pega um lote de filmes da lista
             batch_movies = movies_to_download[i:i + BATCH_SIZE]
             
-            log(f"--- Processando Lote {i // BATCH_SIZE + 1} / {total_to_download // BATCH_SIZE + 1} ---", "green")
+            log(f"--- Processando Lote {i // BATCH_SIZE + 1} / {total_to_download // BATCH_SIZE + 1} (Tamanho: {BATCH_SIZE}) ---", "green")
             
-            files_to_upload = [] # Lista para guardar os (caminho, info) dos baixados
-
-            # 1. FASE DE DOWNLOAD
+            # --- LOOP MODIFICADO: Baixa 1, Envia 1 ---
             for movie in batch_movies:
-                # Checa de novo caso o log tenha sido atualizado em outra execução
+                log(f"\n--- Processando: {movie['full_title_with_lang']} ---", "white")
+                
+                # Checa de novo caso o log tenha sido atualizado
                 if movie['full_title_with_lang'] in await asyncio.to_thread(load_downloaded_log):
                     log(f"PULANDO (já no log): {movie['full_title_with_lang']}", "yellow")
                     continue
                 
-                # Tenta baixar o filme
+                # 1. FASE DE DOWNLOAD
                 file_path = await asyncio.to_thread(download_movie_sync, movie)
                 
+                # 2. FASE DE UPLOAD (IMEDIATA)
                 if file_path:
-                    # Se baixou, adiciona na lista de upload
-                    files_to_upload.append((file_path, movie))
-                
-                # Pausa aleatória (do seu downloader)
-                sleep_time = random.randint(2, 5)
-                await asyncio.sleep(sleep_time) 
-            
-            log(f"--- Fim do download do lote. {len(files_to_upload)} arquivos prontos. ---", "green")
-
-            # 2. FASE DE UPLOAD
-            if files_to_upload:
-                log(f"--- Iniciando Upload de {len(files_to_upload)} arquivos para o Telegram ---", "blue")
-                
-                for file_path, movie_info in files_to_upload:
-                    caption = movie_info['full_title_with_lang']
+                    log(f"--- Iniciando Upload de '{movie['full_title_with_lang']}' ---", "blue")
+                    caption = movie['full_title_with_lang']
                     
                     # Tenta fazer o upload
                     success = await upload_video(app, file_path, caption, cache, sem)
                     
                     if success:
-                        # SÓ SE O UPLOAD FOR BEM SUCEDIDO, NÓS ADICIONAMOS AO LOG!
-                        # Isso garante que se o upload falhar, ele será baixado de novo na próxima vez.
                         log(f"Marcando '{caption}' como concluído no log.", "green")
                         await asyncio.to_thread(add_to_downloaded_log, caption)
                     else:
-                        log(f"Upload de '{caption}' falhou. Ele NÃO será marcado no log e será baixado novamente na próxima execução.", "red")
+                        log(f"Upload de '{caption}' falhou. Ele NÃO será marcado no log...", "red")
+                
+                # Pausa aleatória (do seu downloader) entre cada FILME
+                sleep_time = random.randint(2, 5)
+                log(f"Pausa curta ({sleep_time}s) antes do próximo item do lote...", "yellow")
+                await asyncio.sleep(sleep_time) 
             
-            log(f"--- Fim do Lote {i // BATCH_SIZE + 1} ---", "green")
+            log(f"\n--- Fim do Lote {i // BATCH_SIZE + 1} ---", "green")
     
     log("\nVerificação concluída. Todos os lotes foram processados.", "green")
 
