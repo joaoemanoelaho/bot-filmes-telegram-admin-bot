@@ -273,13 +273,13 @@ def download_movie_sync(movie_info: dict) -> str:
 
 async def upload_video(app, full_path, caption_text, cache, sem):
     """
-    Função de upload (praticamente idêntica à do seu script original).
-    Ela DELETA o arquivo após o upload.
+    Função de upload MODIFICADA para Square Cloud.
+    Remove o uso de ffprobe/ffmpeg para evitar 'Permission denied'.
     """
     async with sem:
         try:
             file_size_mb = os.path.getsize(full_path) / (1024**2)
-            MAX_FILE_SIZE_MB = 3900
+            MAX_FILE_SIZE_MB = 3900 
             
             if file_size_mb > MAX_FILE_SIZE_MB:
                 log(f"⚠️  Arquivo muito grande ({file_size_mb:.0f}MB > {MAX_FILE_SIZE_MB}MB): {caption_text}", "yellow")
@@ -287,20 +287,13 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                 os.remove(full_path)
                 return False # Falha no upload
 
-            # --- MUDANÇA CRÍTICA: Usando asyncio.to_thread para rodar código síncrono ---
-            if full_path in cache:
-                duration, width, height = cache[full_path].values()
-                log(f"Metadados cacheados: {duration}s, {width}x{height}", "yellow")
-            else:
-                duration, width, height = await asyncio.to_thread(get_video_metadata, full_path)
-                if not duration: duration, width, height = 0, 0, 0
-                cache[full_path] = {"duration": duration, "width": width, "height": height}
-                await asyncio.to_thread(save_cache, cache)
-
-            thumb = None
-            if duration > 0:
-                thumb = await asyncio.to_thread(create_thumbnail, full_path, duration)
-            # --- FIM DA MUDANÇA ---
+            # --- BLOCO FFPROBE/FFMPEG REMOVIDO ---
+            # Não tentamos mais pegar metadados ou criar thumbnails,
+            # pois não temos permissão para rodar .exe no Square Cloud.
+            # O Pyrogram vai tentar adivinhar isso sozinho.
+            # 
+            # (Todo o bloco que chamava get_video_metadata e create_thumbnail foi removido)
+            # --- FIM DA REMOÇÃO ---
 
             backoff = 5
             retry_count = 0
@@ -310,21 +303,22 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                 try:
                     log(f"🔄 Enviando {caption_text}...", "blue")
                     
+                    # --- MUDANÇA CRÍTICA ---
+                    # Removemos duration, width, height, e thumb.
+                    # O Pyrogram vai detectar isso automaticamente.
                     await app.send_video(
                         chat_id=STORAGE_CHANNEL_ID,
                         video=full_path,
                         caption=caption_text,
-                        progress=progress_callback,
-                        duration=duration,
-                        width=width,
-                        height=height,
-                        thumb=thumb
+                        progress=progress_callback
                     )
+                    # --- FIM DA MUDANÇA ---
                     
                     log(f"\n✅ Upload concluído: {caption_text}", "green")
                     os.remove(full_path) # Deleta o vídeo
-                    if thumb and os.path.exists(thumb):
-                        os.remove(thumb) # Deleta a thumbnail
+                    
+                    # (A lógica de deletar o thumb também foi removida, 
+                    # pois ele não é mais criado)
 
                     wait_time = random.uniform(MIN_UPLOAD_INTERVAL, MAX_UPLOAD_INTERVAL)
                     minutes = wait_time / 60
@@ -338,7 +332,7 @@ async def upload_video(app, full_path, caption_text, cache, sem):
                     retry_count += 1
                     
                 except (OSError, ConnectionError) as e:
-                    if "10065" in str(e): # Erro de conexão comum
+                    if "10065" in str(e): 
                         retry_count += 1
                         log(f"\n🔌 Erro de conexão (tentativa {retry_count}/{max_retries})", "yellow")
                         if retry_count < max_retries:
@@ -361,7 +355,7 @@ async def upload_video(app, full_path, caption_text, cache, sem):
         except Exception as e:
             log(f"Erro inesperado em upload_video: {e}", "red")
             return False # Falha no upload
-
+        
 # =================================================================
 # FUNÇÃO PRINCIPAL (O ORQUESTRADOR)
 # =================================================================
