@@ -19,7 +19,7 @@ try:
     # IMPORTANTE: Seu config.py agora precisa ter TUDO
     from config import (
         M3U_FILE_PATH, DOWNLOAD_FOLDER, LOG_FILE, REFERER_URL, 
-        USER_AGENT, PROXY_URL, API_ID, API_HASH, STORAGE_CHANNEL_ID
+        USER_AGENT, PROXY_URL, API_ID, API_HASH, STORAGE_CHANNEL_ID, SESSION_STRING
     )
 except ImportError:
     print("ERRO: Não foi possível encontrar o arquivo 'config.py'.")
@@ -368,7 +368,22 @@ async def upload_video(app, full_path, caption_text, cache, sem):
 
 async def main():
     log("Iniciando cliente Pyrogram...", "blue")
-    app = Client(SESSION_NAME, api_id=API_ID, api_hash=API_HASH, workers=WORKER_COUNT)
+
+    if not SESSION_STRING:
+        log("ERRO: A variável de ambiente PYROGRAM_SESSION_STRING não foi definida no Square Cloud.", "red")
+        log("Por favor, gere a string localmente e adicione-a ao painel do seu app.", "red")
+        sys.exit(1)
+
+    log("Iniciando cliente Pyrogram a partir da String de Sessão...", "blue")
+
+    # Inicia o cliente usando a string, em vez do nome da sessão
+    app = Client(
+        SESSION_NAME,  # Pode manter o nome, não afeta
+        session_string=SESSION_STRING,
+        api_id=API_ID,
+        api_hash=API_HASH,
+        workers=WORKER_COUNT
+    )
 
     # Carrega o cache e o log usando asyncio.to_thread para não bloquear
     cache = await asyncio.to_thread(load_cache)
