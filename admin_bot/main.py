@@ -18,7 +18,7 @@ print("[DEBUG-ADMIN] Versão do código: 1.2 (com Webhook e Persistência)")
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
 
 # --- NOVO: Define um arquivo para salvar a "memória" do bot ---
-ADMIN_BOT_PERSISTENCE_FILE = "admin_bot_persistence.pkl"
+ADMIN_BOT_PERSISTENCE_FILE = "/data/admin_bot_persistence.pkl"
 
 application: Application = None
 APP_INITIALIZED = asyncio.Event()
@@ -43,8 +43,8 @@ async def startup():
         application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
         
         # Handlers do seu código antigo
-        application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
+        application.add_handler(handlers.start_handler)
         application.add_handler(handlers.get_id_command_handler)
         application.add_handler(handlers.admin_video_handler)
         application.add_handler(handlers.get_chat_id_command_handler)
