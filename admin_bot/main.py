@@ -7,18 +7,15 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
-from telegram.ext import Application, PicklePersistence # <-- NOVO
+from telegram.ext import Application
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
 
 # --- DEBUG PRINT ---
-print("[DEBUG-ADMIN] Versão do código: 1.2 (com Webhook e Persistência)")
+print("[DEBUG-ADMIN] Versão do código: 1.1 (com Webhook e asyncio.Event)")
 # ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
-
-# --- NOVO: Define um arquivo para salvar a "memória" do bot ---
-ADMIN_BOT_PERSISTENCE_FILE = "/application/admin_bot_persistence.pkl"
 
 application: Application = None
 APP_INITIALIZED = asyncio.Event()
@@ -36,15 +33,11 @@ async def startup():
     print("[DEBUG-ADMIN] Função startup() iniciada.")
     
     try:
-        # --- NOVO: Configura a persistência ---
-        persistence = PicklePersistence(filepath=ADMIN_BOT_PERSISTENCE_FILE)
-        
-        # --- MODIFICADO: Adiciona .persistence(persistence) ---
-        application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
+        application = Application.builder().token(ADMIN_BOT_TOKEN).build()
         
         # Handlers do seu código antigo
-        application.add_handler(handlers.button_click_handler)
         application.add_handler(handlers.start_handler)
+        application.add_handler(handlers.button_click_handler)
         application.add_handler(handlers.get_id_command_handler)
         application.add_handler(handlers.admin_video_handler)
         application.add_handler(handlers.get_chat_id_command_handler)
@@ -54,7 +47,7 @@ async def startup():
         application.add_error_handler(error_handler)
         
         await application.initialize()
-        print("✅ Bot de ADMIN (webhook) inicializado com PERSISTÊNCIA!")
+        print("✅ Bot de ADMIN (webhook) inicializado!")
         
         print("[DEBUG-ADMIN] Sinalizando APP_INITIALIZED.set()")
         APP_INITIALIZED.set() 
