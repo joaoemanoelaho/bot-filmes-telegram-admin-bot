@@ -7,12 +7,13 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
-from telegram.ext import Application
+# --- MUDANÇA 1: IMPORTAR O DictPersistence ---
+from telegram.ext import Application, DictPersistence 
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
 
 # --- DEBUG PRINT ---
-print("[DEBUG-ADMIN] Versão do código: 1.1 (com Webhook e asyncio.Event)")
+print("[DEBUG-ADMIN] Versão do código: 1.3 (com Webhook e DictPersistence - Memória RAM)")
 # ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -33,11 +34,16 @@ async def startup():
     print("[DEBUG-ADMIN] Função startup() iniciada.")
     
     try:
-        application = Application.builder().token(ADMIN_BOT_TOKEN).build()
+        # --- MUDANÇA 2: HABILITAR A PERSISTÊNCIA EM MEMÓRIA RAM ---
+        # Isso não cria arquivos, mas liga o context.bot_data
+        persistence = DictPersistence()
         
-        # Handlers do seu código antigo
-        application.add_handler(handlers.start_handler)
+        application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
+        
+        # Handlers (reordenados para priorizar botões)
+        # É uma boa prática registrar o handler de botões primeiro.
         application.add_handler(handlers.button_click_handler)
+        application.add_handler(handlers.start_handler)
         application.add_handler(handlers.get_id_command_handler)
         application.add_handler(handlers.admin_video_handler)
         application.add_handler(handlers.get_chat_id_command_handler)
@@ -47,7 +53,7 @@ async def startup():
         application.add_error_handler(error_handler)
         
         await application.initialize()
-        print("✅ Bot de ADMIN (webhook) inicializado!")
+        print("✅ Bot de ADMIN (webhook) inicializado com PERSISTÊNCIA EM RAM!")
         
         print("[DEBUG-ADMIN] Sinalizando APP_INITIALIZED.set()")
         APP_INITIALIZED.set() 
