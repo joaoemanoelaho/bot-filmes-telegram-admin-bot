@@ -6,6 +6,7 @@ import sys
 import random
 import json
 import asyncio
+import glob
 from pyrogram import Client
 from pyrogram.errors import FloodWait
 from hachoir.parser import createParser
@@ -170,6 +171,46 @@ def parse_m3u(file_path: str):
     log(f"Encontrados {len(movies)} filmes que batem com os critérios.", "green")
     return movies
 
+def limpar_arquivos_temporarios(pasta_download, log_func=log):
+    """
+    Procura e remove arquivos temporários de downloads falhados (.part, .ytdl)
+    em um diretório específico.
+    Usa a função de log do script.
+    """
+    log_func("--- 🛡️ Iniciando Sistema de Segurança (Limpeza de .part) ---", "yellow")
+    
+    # Lista de padrões de arquivos temporários para remover
+    padroes_para_limpar = ["*.part", "*.ytdl"]
+    arquivos_removidos = 0
+
+    for padrao in padroes_para_limpar:
+        # Cria o caminho completo do padrão (ex: /pasta/de/downloads/*.part)
+        caminho_padrao = os.path.join(pasta_download, padrao)
+        
+        try:
+            # glob.glob encontra todos os arquivos que correspondem ao padrão
+            arquivos_temporarios = glob.glob(caminho_padrao)
+        except Exception as e:
+            log_func(f"Erro ao buscar arquivos com padrão '{padrao}': {e}", "red")
+            continue
+        
+        if not arquivos_temporarios:
+            log_func(f"Nenhum arquivo '{padrao}' encontrado.", "blue")
+            continue
+
+        for arquivo in arquivos_temporarios:
+            try:
+                os.remove(arquivo)
+                log_func(f"🧹 Arquivo temporário removido: {arquivo}", "yellow")
+                arquivos_removidos += 1
+            except OSError as e:
+                log_func(f"⚠️ Erro ao tentar remover {arquivo}: {e}", "red")
+
+    if arquivos_removidos > 0:
+        log_func(f"--- ✅ Limpeza Concluída: {arquivos_removidos} arquivos removidos ---", "green")
+    else:
+        log_func("--- 🛡️ Fim da Limpeza (Nada a fazer) ---", "blue")
+
 # =================================================================
 # BLOCO DE PROCESSAMENTO DE VÍDEO (do Uploader)
 # =================================================================
@@ -288,12 +329,20 @@ def download_movie_sync(movie_info: dict) -> str:
         except:
             log(f"Saída do erro (não foi possível decodificar): {e.stderr}", "red")
             
+        # 👇 SEU SISTEMA DE SEGURANÇA ENTRA AQUI 👇
+        limpar_arquivos_temporarios(DOWNLOAD_FOLDER, log_func=log)
+        # 👆 FIM DA ALTERAÇÃO 👆
+
     except Exception as e:
         # Este bloco agora vai capturar o erro que estava em branco
         log(f"\n❌ ERRO INESPERADO (TIPO: {type(e)}) ao baixar '{full_title_with_lang}':", "red")
         log(f"   REPR DO ERRO: {repr(e)}", "red")
         import traceback
         log(traceback.format_exc(), "yellow") # Imprime o stack trace completo
+
+        # 👇 SEU SISTEMA DE SEGURANÇA ENTRA AQUI TAMBÉM 👇
+        limpar_arquivos_temporarios(DOWNLOAD_FOLDER, log_func=log)
+        # 👆 FIM DA ALTERAÇÃO 👆
     
     # Se chegou aqui, falhou. Limpa o arquivo parcial.
     if file_path and os.path.exists(file_path):
@@ -589,7 +638,7 @@ async def main():
             log(f"\n--- Fim do Lote {i // BATCH_SIZE + 1} ---", "green")
     
     log("\nVerificação concluída. Todos os lotes foram processados.", "green")
-    
+
 # ========================
 # ENTRY POINT
 # ========================
