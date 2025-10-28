@@ -1,8 +1,8 @@
 #
 # Arquivo que contém as respostas e lógicas para os comandos.
-# VERSÃO 3.0 - COM RETENTATIVAS (RETRY) PARA ERROS DE REDE (httpx.ReadError)
+# VERSÃO 3.2 - CORRIGINDO ERRO DE SINTAXE (CallbackQuery)
 #
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery # <-- MUDANÇA 1
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 import database as db
 import tmdb_api
@@ -19,7 +19,7 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 # =================================================================
-# === NOVAS FUNÇÕES DE SEGURANÇA (AGORA COM RETENTATIVAS) ===
+# === FUNÇÕES DE SEGURANÇA (COM RETENTATIVAS) ===
 # =================================================================
 
 async def safe_edit_message(message, new_text, **kwargs):
@@ -62,7 +62,7 @@ async def safe_send_message(context: ContextTypes.DEFAULT_TYPE, chat_id, text, *
                 print(f"❌ FALHA AO ENVIAR MENSAGEM para {chat_id} após 3 tentativas.")
                 return None  # Retorna None se falhar
 
-async def safe_answer_query(query: Update.callback_query, **kwargs):
+async def safe_answer_query(query: CallbackQuery, **kwargs): # <-- MUDANÇA 2
     """Tenta responder um callback query, com 3 retentativas."""
     retries = 3
     delay = 1 # Resposta de query pode ser mais rápida
@@ -78,10 +78,7 @@ async def safe_answer_query(query: Update.callback_query, **kwargs):
                 print(f"❌ FALHA AO RESPONDER QUERY após 3 tentativas.")
 
 # =================================================================
-# === SEUS HANDLERS ORIGINAIS (NÃO PRECISAM MUDAR NADA) ===
-# =is
-# (O código abaixo é o mesmo da v2.0, pois a lógica de retry
-# já está nas funções 'safe_...' acima)
+# === HANDLERS COM LOGS DE DEBUG ADICIONADOS ===
 # =================================================================
 
 async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -94,7 +91,7 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Processa APENAS os cliques de confirmação de indexação do admin."""
     
-    # --- NOVO DEBUG PRINT ---
+    # --- DEBUG PRINT ADICIONADO ---
     print("\n" + "="*50)
     print(f"DEBUG: [button_handler_admin] ACIONADO!")
     
@@ -112,6 +109,9 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
     print(f"DEBUG: [button_handler_admin] Callback Data: {callback_data}")
     print("="*50 + "\n")
     # --- FIM DO DEBUG PRINT ---
+
+    # (Nota: o handler 'debug_all_updates' em main.py já deve ter logado isso)
+    # Este log aqui só aparece se o 'debug_all_updates' já funcionou.
 
     if callback_data.startswith("confirm_"):
         if user_id not in ADMIN_IDS:
@@ -191,7 +191,7 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             
         return
     else:
-        # --- NOVO DEBUG PRINT ---
+        # --- DEBUG PRINT ---
         print(f"DEBUG: [button_handler_admin] IGNORADO: Callback data '{callback_data}' não começa com 'confirm_'.")
         print("="*50 + "\n")
         # --- FIM DO DEBUG PRINT ---
@@ -435,10 +435,11 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             
             keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_{request_id}_ignore")])
             
+            # --- CORREÇÃO DO ERRO 'parse_code' ---
             await safe_send_message(
-            context,
-            chat_id=ADMIN_IDS[0], text=message_text,
-            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown" # <-- CORRIGIDO
+                context,
+                chat_id=ADMIN_IDS[0], text=message_text,
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown" # <-- CORRIGIDO
             )
             
     except Exception as e:
@@ -458,3 +459,4 @@ get_id_command_handler = CommandHandler("getid", get_id_handler)
 admin_video_handler = MessageHandler(filters.VIDEO & ~filters.COMMAND & filters.ChatType.PRIVATE, add_movie_handler)
 get_chat_id_command_handler = CommandHandler("id", get_chat_id_handler)
 channel_video_handler = MessageHandler(filters.VIDEO & filters.Chat(chat_id=STORAGE_CHANNEL_ID), new_movie_in_channel_handler)
+
