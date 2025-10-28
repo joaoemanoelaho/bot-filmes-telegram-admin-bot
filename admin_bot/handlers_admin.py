@@ -93,44 +93,82 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Processa APENAS os cliques de confirmação de indexação do admin."""
+    
+    # --- NOVO DEBUG PRINT ---
+    print("\n" + "="*50)
+    print(f"DEBUG: [button_handler_admin] ACIONADO!")
+    
     query = update.callback_query
+    
+    if not query:
+        print(f"DEBUG: [button_handler_admin] ERRO: Objeto 'query' está NULO.")
+        print("="*50 + "\n")
+        return
+        
     callback_data = query.data
     user_id = query.from_user.id
 
+    print(f"DEBUG: [button_handler_admin] User ID: {user_id}")
+    print(f"DEBUG: [button_handler_admin] Callback Data: {callback_data}")
+    print("="*50 + "\n")
+    # --- FIM DO DEBUG PRINT ---
+
     if callback_data.startswith("confirm_"):
         if user_id not in ADMIN_IDS:
+            print("DEBUG: [button_handler_admin] Ação restrita para este usuário.")
             await safe_answer_query(query, "Ação restrita.", show_alert=True)
             return
         
+        print("DEBUG: [button_handler_admin] Callback data 'confirm_' VÁLIDO. Processando...")
         await safe_answer_query(query) # <--- Agora com retries
         parts = callback_data.split('_')
         request_id, action = parts[1], parts[2]
+        
+        print(f"DEBUG: [button_handler_admin] Request ID: {request_id}, Action: {action}")
+        
         request_data = context.bot_data.get(request_id)
 
         if not request_data:
+            print(f"DEBUG: [button_handler_admin] ERRO: Pedido expirou (request_data não encontrado para ID: {request_id}).")
             await safe_edit_message(query.message, "❌ Este pedido expirou.") # <--- Agora com retries
             return
+            
         if action == "ignore":
+            print("DEBUG: [button_handler_admin] Ação 'ignore' selecionada. Arquivo ignorado.")
             await safe_edit_message(query.message, "Ok, arquivo ignorado.") # <--- Agora com retries
-            del context.bot_data[request_id]
+            if request_id in context.bot_data:
+                del context.bot_data[request_id]
             return
 
-        tmdb_id_to_confirm = int(action)
-        chosen_movie_details = next((opt for opt in request_data['options'] if opt['tmdb_id'] == tmdb_id_to_confirm), None)
+        try:
+            tmdb_id_to_confirm = int(action)
+        except ValueError:
+            print(f"DEBUG: [button_handler_admin] ERRO: Ação '{action}' não é um número (TMDb ID) nem 'ignore'.")
+            return
+            
+        print(f"DEBUG: [button_handler_admin] TMDb ID selecionado: {tmdb_id_to_confirm}")
+        
+        chosen_movie_details = next((opt for opt in request_data['options'] if opt.get('tmdb_id') == tmdb_id_to_confirm), None)
         
         if not chosen_movie_details:
+            print("DEBUG: [button_handler_admin] ERRO: Opção inválida (chosen_movie_details não encontrado).")
+            print(f"DEBUG: Opções disponíveis eram: {request_data.get('options')}")
             await safe_edit_message(query.message, "❌ Erro: Opção inválida.") # <--- Agora com retries
-            del context.bot_data[request_id]
+            if request_id in context.bot_data:
+                del context.bot_data[request_id]
             return
 
+        print(f"DEBUG: [button_handler_admin] Processando filme: '{chosen_movie_details['title']}'...")
         await safe_edit_message(query.message, f"⏳ Processando: '{chosen_movie_details['title']}'...") # <--- Agora com retries
         
         try:
             existing_movie = db.find_movie_by_title_and_year(title=chosen_movie_details['title'], year=chosen_movie_details['year'])
             if existing_movie:
+                print("DEBUG: [button_handler_admin] Filme existe. Atualizando file_id...")
                 success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=request_data['file_id'], audio_type=request_data['audio_type'])
                 msg = f"🔄 Filme '{chosen_movie_details['title']}' atualizado!" if success else "❌ Erro ao ATUALIZAR."
             else:
+                print("DEBUG: [button_handler_admin] Filme novo. Adicionando ao DB...")
                 if request_data['audio_type'].upper() == 'DUB':
                     chosen_movie_details['dubbed_file_id'] = request_data['file_id']
                 else:
@@ -139,15 +177,24 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
                 chosen_movie_details.pop('button_text', None)
                 success = db.add_movie(chosen_movie_details)
                 msg = f"✅ Filme '{chosen_movie_details['title']}' adicionado!" if success else "❌ Erro ao SALVAR."
-        
+            
+            print(f"DEBUG: [button_handler_admin] Resultado: {msg}")
             await safe_edit_message(query.message, msg) # <--- Agora com retries
-            del context.bot_data[request_id]
+            if request_id in context.bot_data:
+                del context.bot_data[request_id]
         
         except Exception as e:
             print(f"❌ ERRO CRÍTICO no Banco de Dados (button_handler): {e}")
+            import traceback
+            traceback.print_exc()
             await safe_edit_message(query.message, f"❌ ERRO CRÍTICO no Banco de Dados: {e}")
             
         return
+    else:
+        # --- NOVO DEBUG PRINT ---
+        print(f"DEBUG: [button_handler_admin] IGNORADO: Callback data '{callback_data}' não começa com 'confirm_'.")
+        print("="*50 + "\n")
+        # --- FIM DO DEBUG PRINT ---
     
 async def get_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Retorna o file_id de uma mídia, APENAS PARA ADMINS."""
