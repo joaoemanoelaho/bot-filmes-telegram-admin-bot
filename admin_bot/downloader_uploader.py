@@ -180,7 +180,7 @@ def limpar_arquivos_temporarios(pasta_download, log_func=log):
     log_func("--- 🛡️ Iniciando Sistema de Segurança (Limpeza de .part) ---", "yellow")
     
     # Lista de padrões de arquivos temporários para remover
-    padroes_para_limpar = ["*.part", "*.ytdl"]
+    padroes_para_limpar = ["*.part", "*.ytdl", "*.mp4"]
     arquivos_removidos = 0
 
     for padrao in padroes_para_limpar:
