@@ -508,6 +508,18 @@ async def main():
         workers=WORKER_COUNT
     )
 
+    # --- 🛡️ LIMPEZA DE STARTUP 🛡️ ---
+    # (Adicionado conforme sua solicitação)
+    log("Garantindo que a pasta de download existe...", "blue")
+    os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+    
+    log("Verificando pasta de download por arquivos .part órfãos...", "yellow")
+    # Usamos to_thread para rodar a função síncrona (que usa os.remove)
+    # sem bloquear o loop de eventos do asyncio.
+    await asyncio.to_thread(limpar_arquivos_temporarios, DOWNLOAD_FOLDER, log_func=log)
+    log("Verificação de limpeza no startup concluída.", "green")
+    # --- FIM DA LIMPEZA DE STARTUP ---
+
     cache = await asyncio.to_thread(load_cache)
     downloaded_set = await asyncio.to_thread(load_downloaded_log)
     local_files_map = await asyncio.to_thread(scan_download_folder)

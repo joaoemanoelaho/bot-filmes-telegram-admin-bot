@@ -436,9 +436,9 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_{request_id}_ignore")])
             
             await safe_send_message(
-                context,
-                chat_id=ADMIN_IDS[0], text=message_text,
-                reply_markup=InlineKeyboardMarkup(keyboard), parse_code="Markdown"
+            context,
+            chat_id=ADMIN_IDS[0], text=message_text,
+            reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown" # <-- CORRIGIDO
             )
             
     except Exception as e:
