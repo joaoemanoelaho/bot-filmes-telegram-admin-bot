@@ -7,13 +7,13 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
-# --- MUDANÇA 1: IMPORTAR O DictPersistence ---
-from telegram.ext import Application, DictPersistence 
+# --- MUDANÇA 1: IMPORTAR O DictPersistence E TypeHandler ---
+from telegram.ext import Application, DictPersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
 
 # --- DEBUG PRINT ---
-print("[DEBUG-ADMIN] Versão do código: 1.3 (com Webhook e DictPersistence - Memória RAM)")
+print("[DEBUG-ADMIN] Versão do código: 1.4 (com Debug Handler)")
 # ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -27,6 +27,22 @@ async def error_handler(update: object, context):
     import traceback
     traceback.print_exc()
 
+# --- NOVO HANDLER DE DEBUG ---
+async def debug_all_updates(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Imprime um log para QUALQUER update recebido pelo processador."""
+    print("\n" + "--- [DEBUG_ALL_UPDATES] ---")
+    if update.message:
+        print(f"Tipo: Message (Texto: {update.message.text})")
+    elif update.channel_post:
+        print(f"Tipo: Channel Post")
+    elif update.callback_query:
+        print(f"Tipo: CallbackQuery (Botão!)")
+        print(f"Dados Recebidos: {update.callback_query.data}")
+    else:
+        print(f"Tipo desconhecido: {type(update)}")
+    print("-----------------------------" + "\n")
+# --- FIM DO NOVO HANDLER ---
+
 async def startup():
     """Inicializa o bot ao iniciar o servidor"""
     global application
@@ -34,12 +50,16 @@ async def startup():
     print("[DEBUG-ADMIN] Função startup() iniciada.")
     
     try:
-        # --- MUDANÇA 2: HABILITAR A PERSISTÊNCIA EM MEMÓRIA RAM ---
+        # --- HABILITAR A PERSISTÊNCIA EM MEMÓRIA RAM ---
         # Isso não cria arquivos, mas liga o context.bot_data
         persistence = DictPersistence()
         
         application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
         
+        # --- MUDANÇA 3: ADICIONAR O DEBUG HANDLER ---
+        # O group=-1 garante que ele rode ANTES dos seus handlers normais.
+        application.add_handler(TypeHandler(Update, debug_all_updates), group=-1)
+
         # Handlers (reordenados para priorizar botões)
         # É uma boa prática registrar o handler de botões primeiro.
         application.add_handler(handlers.button_click_handler)
@@ -111,3 +131,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000)) 
     print(f"[WEB-ADMIN] Servidor iniciando em http://0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
+
