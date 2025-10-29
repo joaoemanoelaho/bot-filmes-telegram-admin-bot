@@ -35,8 +35,8 @@ BATCH_SIZE = 2  # O TAMANHO DO LOTE QUE VOCÊ PEDIU
 SESSION_NAME = "minha_conta_de_upload"
 WORKER_COUNT = 16 # Do seu script de upload
 MAX_CONCURRENT_UPLOADS = 1 # Do seu script de upload
-MIN_UPLOAD_INTERVAL = 300   # 5 minutos
-MAX_UPLOAD_INTERVAL = 600   # 10 minutos
+MIN_UPLOAD_INTERVAL = 240   # 4 minutos
+MAX_UPLOAD_INTERVAL = 480   # 8 minutos
 
 # --- CAMINHOS PARA FFmpeg/FFprobe ---
 # (Copiado do seu script de upload)
