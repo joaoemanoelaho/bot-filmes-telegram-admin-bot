@@ -31,6 +31,8 @@ def search_movie_options(query: str) -> list:
         raw_results = search.multi(term=clean_query)
         # ^--- FIM DA CORREÇÃO ---^
 
+        print(f"[DEBUG TMDb] Resposta crua de search.multi: {raw_results}")
+
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
         for r in raw_results:
