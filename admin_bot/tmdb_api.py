@@ -1,5 +1,6 @@
 import re
-from tmdbv3api import TMDb, Movie, TMDbException # Importe o TMDbException
+from tmdbv3api import TMDb, Movie                  # <-- CORREÇÃO 1
+from tmdbv3api.exceptions import TMDbException # <-- CORREÇÃO 2
 from config import TMDB_API_KEY 
 
 # Configuração da API
@@ -35,11 +36,9 @@ def search_movie_options(query: str) -> list:
         filtered_results = []
         if year:
             for r in search_results:
-                # V--- A CORREÇÃO ESTÁ AQUI ---V
                 # Pulamos resultados malformados que não são objetos 'Movie'
                 if not isinstance(r, Movie):
                     continue
-                # ^--- FIM DA CORREÇÃO ---^
                     
                 release_date = getattr(r, 'release_date', None)
                 if release_date and str(year) in str(release_date):
@@ -95,7 +94,7 @@ def search_movie_options(query: str) -> list:
                 })
             except TMDbException as e:
                 # Captura erros específicos da API (ex: filme removido)
-                print(f"Erro da API TMDb ao processar {result.id}: {e}")
+                print(f"Erro da API TMDb ao processar {getattr(result, 'id', 'ID_DESCONHECIDO')}: {e}")
                 continue
             except Exception as e:
                 print(f"Erro ao processar resultado individual: {e}")
