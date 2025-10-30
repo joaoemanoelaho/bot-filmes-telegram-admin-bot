@@ -66,13 +66,11 @@ def search_movie_options(query: str) -> list:
             try:
                 tmdb_id_to_fetch = result_dict.get('id')
                 if not tmdb_id_to_fetch:
-                    continue # Pula se o dict não tiver um ID
+                    continue 
 
-                # 'details' VAI ser um objeto, pois vem de movie_search.details()
                 details = movie_search.details(tmdb_id_to_fetch, append_to_response='translations')
-                # ^--- FIM DA CORREÇÃO 4 ---^
                 
-                # --- LÓGICA DO TÍTULO INTELIGENTE ---
+                # --- LÓGICA DO TÍTULO INTELIGENTE (CORRIGIDA) ---
                 title_pt = details.title 
                 original_title = details.original_title
                 
@@ -82,31 +80,46 @@ def search_movie_options(query: str) -> list:
                 if english_translation:
                     english_title = english_translation
                 
-                display_title = title_pt
+                # V--- INÍCIO DA CORREÇÃO ---V
                 
+                # O 'title' principal para checagem de automação DEVE ser o title_pt
+                main_title_for_check = title_pt 
+                
+                # Agora, definimos o texto do BOTÃO
+                # Por padrão, usamos o título em PT
+                button_title_to_use = title_pt 
+
+                # Se o título PT é o original E existe um em inglês...
                 if title_pt == original_title and english_title:
-                    display_title = english_title
+                    # ...usamos o título em INGLÊS no botão.
+                    button_title_to_use = english_title
                 
-                if display_title != original_title:
-                    final_button_text = f"{display_title} ({original_title})"
+                # Montamos o texto final do botão
+                if button_title_to_use != original_title:
+                    final_button_text = f"{button_title_to_use} ({original_title})"
                 else:
-                    final_button_text = display_title
+                    final_button_text = button_title_to_use
+
+                # ^--- FIM DA CORREÇÃO ---^
 
                 year_value = 'N/A'
                 try:
                     if details.release_date:
                         year_value = int(details.release_date.split('-')[0])
                 except: pass
-
+                
+                # V--- CORREÇÃO NO DICT DE RETORNO ---V
                 options.append({
                     'tmdb_id': details.id,
-                    'title': display_title,
-                    'button_text': final_button_text,
+                    'title': main_title_for_check,    # <--- Sempre será o 'title_pt'
+                    'button_text': final_button_text, # <--- Texto "inteligente" para o botão
                     'year': year_value,
                     'genre': details.genres[0]['name'] if details.genres else 'N/A',
                     'description': details.overview,
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
+                # ^--- FIM DA CORREÇÃO ---^
+                
             except TMDbException as e:
                 print(f"Erro da API TMDb ao processar {result_dict.get('id', 'ID_DESCONHECIDO')}: {e}")
                 continue
