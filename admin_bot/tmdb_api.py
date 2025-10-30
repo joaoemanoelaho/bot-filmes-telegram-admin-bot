@@ -1,14 +1,14 @@
 import re
-from tmdbv3api import TMDb, Movie                  # <-- CORREÇÃO 1
-from tmdbv3api.exceptions import TMDbException # <-- CORREÇÃO 2
+from tmdbv3api import TMDb, Movie
+from tmdbv3api.exceptions import TMDbException # Vamos manter isso, o import estava certo
 from config import TMDB_API_KEY 
 
 # Configuração da API
 tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
-tmdb.language = 'pt-BR'
+tmdb.language = 'pt-BR' # <-- Continua correto, afeta o 'details'
 
-movie_search = Movie()
+movie_search = Movie() # <-- Vamos manter para usar o .details()
 
 def search_movie_options(query: str) -> list:
     """
@@ -24,7 +24,26 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        search_results = movie_search.search(clean_query)
+        # V--- A CORREÇÃO ESTÁ AQUI ---V
+        # Paramos de usar 'movie_search.search()' (que é bugado)
+        # Usamos 'tmdb.search()' (multi-search) que ACEITA o idioma.
+        
+        # Primeiro, tentamos buscar com o ano, se ele existir
+        raw_results = []
+        if year:
+            raw_results = tmdb.search(query=clean_query, language='pt-BR', year=year)
+        
+        # Se não achou com ano (ou não tinha ano), busca sem o ano
+        if not raw_results:
+             raw_results = tmdb.search(query=clean_query, language='pt-BR')
+
+        # Agora, filtramos os resultados para pegar APENAS filmes
+        search_results = []
+        for r in raw_results:
+            # Usamos 'isinstance(r, Movie)' para garantir que é um objeto de filme
+            if isinstance(r, Movie):
+                search_results.append(r)
+        # ^--- FIM DA CORREÇÃO ---^
 
         if not search_results:
             print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: 0")
@@ -32,14 +51,10 @@ def search_movie_options(query: str) -> list:
         
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
-        # 3. Filtro inicial por ano (flexível)
+        # 3. Filtro de ano (agora redundante, mas vamos manter para garantir)
         filtered_results = []
         if year:
             for r in search_results:
-                # Pulamos resultados malformados que não são objetos 'Movie'
-                if not isinstance(r, Movie):
-                    continue
-                    
                 release_date = getattr(r, 'release_date', None)
                 if release_date and str(year) in str(release_date):
                     filtered_results.append(r)
@@ -51,10 +66,7 @@ def search_movie_options(query: str) -> list:
         # O loop agora pega os 3 primeiros resultados
         for result in filtered_results[:3]:
             try:
-                # Esta verificação é ótima, mantenha-a
-                if not isinstance(result, Movie):
-                    continue
-                
+                # 'details' vai respeitar o tmdb.language = 'pt-BR' global
                 details = movie_search.details(result.id, append_to_response='translations')
                 
                 # --- LÓGICA DO TÍTULO INTELIGENTE ---
@@ -69,6 +81,8 @@ def search_movie_options(query: str) -> list:
                 
                 display_title = title_pt
                 
+                # Sua lógica: se o título PT for igual ao original (ex: Tropa de Elite)
+                # E existir um título em inglês, use o de inglês.
                 if title_pt == original_title and english_title:
                     display_title = english_title
                 
@@ -93,7 +107,6 @@ def search_movie_options(query: str) -> list:
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
             except TMDbException as e:
-                # Captura erros específicos da API (ex: filme removido)
                 print(f"Erro da API TMDb ao processar {getattr(result, 'id', 'ID_DESCONHECIDO')}: {e}")
                 continue
             except Exception as e:
