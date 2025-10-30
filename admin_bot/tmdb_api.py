@@ -3,7 +3,7 @@ from tmdbv3api import TMDb, Movie, Search
 from tmdbv3api.exceptions import TMDbException
 from config import TMDB_API_KEY 
 
-# Configuração da API
+# Configuração da API (ISSO AQUI GARANTE O PT-BR)
 tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
 tmdb.language = 'pt-BR' 
@@ -29,18 +29,16 @@ def search_movie_options(query: str) -> list:
         if year:
             # O método .multi() aceita 'year'
             # V--- CORREÇÃO APLICADA AQUI ---V
-            raw_results = search.multi(term=clean_query, language='pt-BR', year=year)
+            raw_results = search.multi(term=clean_query, year=year)
         
         # Se não achou com ano (ou não tinha ano), busca sem o ano
         if not raw_results:
              # V--- CORREÇÃO APLICADA AQUI ---V
-             raw_results = search.multi(term=clean_query, language='pt-BR')
+             raw_results = search.multi(term=clean_query)
 
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
         for r in raw_results:
-            # A biblioteca já retorna instâncias de 'Movie', 'TV', 'Person'.
-            # Nós queremos apenas 'Movie'.
             if isinstance(r, Movie):
                 search_results.append(r)
 
@@ -51,6 +49,8 @@ def search_movie_options(query: str) -> list:
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
         # 3. Filtro inicial por ano (Pós-filtro)
+        # ... (o resto do seu código está ótimo) ...
+        
         filtered_results = []
         if year:
             for r in search_results:
@@ -62,7 +62,6 @@ def search_movie_options(query: str) -> list:
             filtered_results = search_results
 
         options = []
-        # O loop agora pega os 3 primeiros resultados
         for result in filtered_results[:3]:
             try:
                 # 'details' vai respeitar o tmdb.language = 'pt-BR' global
