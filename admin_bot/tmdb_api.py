@@ -1,5 +1,5 @@
 import re
-from tmdbv3api import TMDb, Movie, Search  # <-- CORREÇÃO 1: Importar o Search
+from tmdbv3api import TMDb, Movie, Search
 from tmdbv3api.exceptions import TMDbException
 from config import TMDB_API_KEY 
 
@@ -9,7 +9,7 @@ tmdb.api_key = TMDB_API_KEY
 tmdb.language = 'pt-BR' 
 
 movie_search = Movie() # Para usar o .details()
-search = Search()      # <-- CORREÇÃO 2: Instanciar o Search
+search = Search()      # Instância correta
 
 def search_movie_options(query: str) -> list:
     """
@@ -25,15 +25,16 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        # V--- CORREÇÃO 3: Usar search.multi() ---V
         raw_results = []
         if year:
             # O método .multi() aceita 'year'
-            raw_results = search.multi(query=clean_query, language='pt-BR', year=year)
+            # V--- CORREÇÃO APLICADA AQUI ---V
+            raw_results = search.multi(term=clean_query, language='pt-BR', year=year)
         
         # Se não achou com ano (ou não tinha ano), busca sem o ano
         if not raw_results:
-             raw_results = search.multi(query=clean_query, language='pt-BR')
+             # V--- CORREÇÃO APLICADA AQUI ---V
+             raw_results = search.multi(term=clean_query, language='pt-BR')
 
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
@@ -42,7 +43,6 @@ def search_movie_options(query: str) -> list:
             # Nós queremos apenas 'Movie'.
             if isinstance(r, Movie):
                 search_results.append(r)
-        # ^--- FIM DA CORREÇÃO ---^
 
         if not search_results:
             print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: 0")
