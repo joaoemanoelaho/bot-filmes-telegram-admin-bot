@@ -1,6 +1,6 @@
 import re
-from tmdbv3api import TMDb, Movie
-from config import TMDB_API_KEY # Supondo que você tenha este arquivo
+from tmdbv3api import TMDb, Movie, TMDbException # Importe o TMDbException
+from config import TMDB_API_KEY 
 
 # Configuração da API
 tmdb = TMDb()
@@ -17,13 +17,10 @@ def search_movie_options(query: str) -> list:
     try:
         # 1. Limpeza da query e extração do ano
         clean_query = query.replace('&', 'and')
-        year_match = re.search(r'\((\d{4})\)', clean_query) # Padrão CORRETO
+        year_match = re.search(r'\((\d{4})\)', clean_query)
         year = int(year_match.group(1)) if year_match else None
         if year:
-            # V--- A CORREÇÃO ESTÁ AQUI ---V
-            # Adicionamos a '\' antes do ')' para corrigir o "unbalanced parenthesis"
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
-            # ^--- FIM DA CORREÇÃO ---^
         
         # 2. Busca inicial
         search_results = movie_search.search(clean_query)
@@ -38,6 +35,12 @@ def search_movie_options(query: str) -> list:
         filtered_results = []
         if year:
             for r in search_results:
+                # V--- A CORREÇÃO ESTÁ AQUI ---V
+                # Pulamos resultados malformados que não são objetos 'Movie'
+                if not isinstance(r, Movie):
+                    continue
+                # ^--- FIM DA CORREÇÃO ---^
+                    
                 release_date = getattr(r, 'release_date', None)
                 if release_date and str(year) in str(release_date):
                     filtered_results.append(r)
@@ -49,7 +52,8 @@ def search_movie_options(query: str) -> list:
         # O loop agora pega os 3 primeiros resultados
         for result in filtered_results[:3]:
             try:
-                if isinstance(result, str):
+                # Esta verificação é ótima, mantenha-a
+                if not isinstance(result, Movie):
                     continue
                 
                 details = movie_search.details(result.id, append_to_response='translations')
@@ -89,6 +93,10 @@ def search_movie_options(query: str) -> list:
                     'description': details.overview,
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
+            except TMDbException as e:
+                # Captura erros específicos da API (ex: filme removido)
+                print(f"Erro da API TMDb ao processar {result.id}: {e}")
+                continue
             except Exception as e:
                 print(f"Erro ao processar resultado individual: {e}")
                 continue
