@@ -40,7 +40,7 @@ MAX_UPLOAD_INTERVAL = 480   # 8 minutos
 
 # --- CAMINHOS PARA FFmpeg/FFprobe ---
 # (Copiado do seu script de upload)
-BASE_DIR = os.path.dirname(os.pathx .abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FFPROBE_PATH = os.path.join(BASE_DIR, "ffprobe.exe")
 FFMPEG_PATH = os.path.join(BASE_DIR, "ffmpeg.exe")
 # Caminho da thumbnail agora usa o DOWNLOAD_FOLDER
