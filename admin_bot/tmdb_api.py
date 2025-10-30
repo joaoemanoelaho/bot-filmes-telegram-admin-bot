@@ -24,6 +24,8 @@ def search_movie_options(query: str) -> list:
         
         # 2. Busca inicial
         search_results = movie_search.search(clean_query)
+
+        print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
         # 3. Filtro inicial por ano (com verificação de tipo)
         filtered_results = []
