@@ -25,16 +25,11 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        raw_results = []
-        if year:
-            # O método .multi() aceita 'year'
-            # V--- CORREÇÃO APLICADA AQUI ---V
-            raw_results = search.multi(term=clean_query, year=year)
-        
-        # Se não achou com ano (ou não tinha ano), busca sem o ano
-        if not raw_results:
-             # V--- CORREÇÃO APLICADA AQUI ---V
-             raw_results = search.multi(term=clean_query)
+        # V--- CORREÇÃO APLICADA AQUI ---V
+        # A busca é feita SEMPRE com o clean_query. O 'year' será usado
+        # APENAS no filtro pós-busca, que já está implementado logo abaixo.
+        raw_results = search.multi(term=clean_query)
+        # ^--- FIM DA CORREÇÃO ---^
 
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
@@ -49,8 +44,7 @@ def search_movie_options(query: str) -> list:
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
         # 3. Filtro inicial por ano (Pós-filtro)
-        # ... (o resto do seu código está ótimo) ...
-        
+        # ESTA LÓGICA AGORA VAI FUNCIONAR CORRETAMENTE
         filtered_results = []
         if year:
             for r in search_results:
@@ -62,6 +56,7 @@ def search_movie_options(query: str) -> list:
             filtered_results = search_results
 
         options = []
+        # O loop agora pega os 3 primeiros resultados
         for result in filtered_results[:3]:
             try:
                 # 'details' vai respeitar o tmdb.language = 'pt-BR' global
