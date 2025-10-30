@@ -3,7 +3,7 @@ from tmdbv3api import TMDb, Movie, Search
 from tmdbv3api.exceptions import TMDbException
 from config import TMDB_API_KEY 
 
-# Configuração da API (ISSO AQUI GARANTE O PT-BR)
+# Configuração da API
 tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
 tmdb.language = 'pt-BR' 
@@ -25,44 +25,52 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        # V--- CORREÇÃO APLICADA AQUI ---V
-        # A busca é feita SEMPRE com o clean_query. O 'year' será usado
-        # APENAS no filtro pós-busca, que já está implementado logo abaixo.
-        raw_results = search.multi(term=clean_query)
-        # ^--- FIM DA CORREÇÃO ---^
-
-        print(f"[DEBUG TMDb] Resposta crua de search.multi: {raw_results}")
+        # V--- CORREÇÃO 1: 'raw_response' é um dicionário ---V
+        raw_response = search.multi(term=clean_query)
+        print(f"[DEBUG TMDb] Resposta crua de search.multi: {raw_response}")
+        
+        # A lista de resultados está na chave 'results'
+        raw_results_list = raw_response.get('results', [])
 
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
-        for r in raw_results:
-            if isinstance(r, Movie):
-                search_results.append(r)
+        # V--- CORREÇÃO 2: Iterar na lista e checar o dict ---V
+        for r_dict in raw_results_list:
+            if r_dict.get('media_type') == 'movie':
+                search_results.append(r_dict)
+        # ^--- FIM DAS CORREÇÕES 2 ---^
 
         if not search_results:
-            print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: 0")
+            print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: 0")
             return []
         
-        print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
+        print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: {len(search_results)}")
         
         # 3. Filtro inicial por ano (Pós-filtro)
-        # ESTA LÓGICA AGORA VAI FUNCIONAR CORRETAMENTE
         filtered_results = []
         if year:
-            for r in search_results:
-                release_date = getattr(r, 'release_date', None)
+            # V--- CORREÇÃO 3: 'r' é um dict, usar .get() ---V
+            for r_dict in search_results:
+                release_date = r_dict.get('release_date')
                 if release_date and str(year) in str(release_date):
-                    filtered_results.append(r)
+                    filtered_results.append(r_dict)
+            # ^--- FIM DA CORREÇÃO 3 ---^
         
         if not filtered_results:
             filtered_results = search_results
 
         options = []
         # O loop agora pega os 3 primeiros resultados
-        for result in filtered_results[:3]:
+        # V--- CORREÇÃO 4: 'result_dict' é um dict ---V
+        for result_dict in filtered_results[:3]:
             try:
-                # 'details' vai respeitar o tmdb.language = 'pt-BR' global
-                details = movie_search.details(result.id, append_to_response='translations')
+                tmdb_id_to_fetch = result_dict.get('id')
+                if not tmdb_id_to_fetch:
+                    continue # Pula se o dict não tiver um ID
+
+                # 'details' VAI ser um objeto, pois vem de movie_search.details()
+                details = movie_search.details(tmdb_id_to_fetch, append_to_response='translations')
+                # ^--- FIM DA CORREÇÃO 4 ---^
                 
                 # --- LÓGICA DO TÍTULO INTELIGENTE ---
                 title_pt = details.title 
@@ -100,7 +108,7 @@ def search_movie_options(query: str) -> list:
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
             except TMDbException as e:
-                print(f"Erro da API TMDb ao processar {getattr(result, 'id', 'ID_DESCONHECIDO')}: {e}")
+                print(f"Erro da API TMDb ao processar {result_dict.get('id', 'ID_DESCONHECIDO')}: {e}")
                 continue
             except Exception as e:
                 print(f"Erro ao processar resultado individual: {e}")
