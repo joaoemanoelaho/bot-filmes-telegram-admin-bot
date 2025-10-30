@@ -5,7 +5,7 @@ from config import TMDB_API_KEY # Supondo que você tenha este arquivo
 # Configuração da API
 tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
-tmdb.language = 'pt-BR' # <-- CORRETO. Os 'details' virão em português.
+tmdb.language = 'pt-BR'
 
 movie_search = Movie()
 
@@ -17,34 +17,31 @@ def search_movie_options(query: str) -> list:
     try:
         # 1. Limpeza da query e extração do ano
         clean_query = query.replace('&', 'and')
-        year_match = re.search(r'\((\d{4})\)', clean_query)
+        year_match = re.search(r'\((\d{4})\)', clean_query) # Padrão CORRETO
         year = int(year_match.group(1)) if year_match else None
         if year:
-            clean_query = re.sub(r'\s*\(\d{4})\s*', '', clean_query).strip()
+            # V--- A CORREÇÃO ESTÁ AQUI ---V
+            # Adicionamos a '\' antes do ')' para corrigir o "unbalanced parenthesis"
+            clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
+            # ^--- FIM DA CORREÇÃO ---^
         
         # 2. Busca inicial
-        # V--- A CORREÇÃO ESTÁ AQUI ---V
-        # A busca usará o idioma global ('pt-BR') definido acima.
-        # Removemos o argumento 'language' que estava causando o erro.
         search_results = movie_search.search(clean_query)
-        # ^--- FIM DA CORREÇÃO ---^
 
         if not search_results:
             print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: 0")
-            return [] # Retorna vazio se a busca falhar
+            return []
         
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
         # 3. Filtro inicial por ano (flexível)
         filtered_results = []
         if year:
-            # Tenta encontrar com o ano exato primeiro
             for r in search_results:
                 release_date = getattr(r, 'release_date', None)
                 if release_date and str(year) in str(release_date):
                     filtered_results.append(r)
         
-        # Se não achou com o ano exato OU se nenhum ano foi dado, usa os resultados principais
         if not filtered_results:
             filtered_results = search_results
 
@@ -55,11 +52,10 @@ def search_movie_options(query: str) -> list:
                 if isinstance(result, str):
                     continue
                 
-                # 'details' vai respeitar o tmdb.language = 'pt-BR' global
                 details = movie_search.details(result.id, append_to_response='translations')
                 
                 # --- LÓGICA DO TÍTULO INTELIGENTE ---
-                title_pt = details.title # Virá em PT-BR
+                title_pt = details.title 
                 original_title = details.original_title
                 
                 english_title = None
@@ -70,8 +66,6 @@ def search_movie_options(query: str) -> list:
                 
                 display_title = title_pt
                 
-                # Sua lógica inteligente: Se o título PT-BR for igual ao original
-                # (ex: filme brasileiro), ele tenta usar o título em inglês como display.
                 if title_pt == original_title and english_title:
                     display_title = english_title
                 
@@ -88,8 +82,8 @@ def search_movie_options(query: str) -> list:
 
                 options.append({
                     'tmdb_id': details.id,
-                    'title': display_title, # Título em PT-BR ou Inglês (conforme sua lógica)
-                    'button_text': final_button_text, # Título para o botão
+                    'title': display_title,
+                    'button_text': final_button_text,
                     'year': year_value,
                     'genre': details.genres[0]['name'] if details.genres else 'N/A',
                     'description': details.overview,
