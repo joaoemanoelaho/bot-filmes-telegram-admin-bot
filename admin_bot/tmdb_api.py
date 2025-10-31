@@ -25,20 +25,35 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        # V--- CORREÇÃO 1: 'raw_response' é um dicionário ---V
-        raw_response = search.multi(term=clean_query)
-        print(f"[DEBUG TMDb] Resposta crua de search.multi: {raw_response}")
+        # V--- CORREÇÃO 1: Passar 'year' e 'language' para a API ---V
+        raw_response = {}
         
-        # A lista de resultados está na chave 'results'
+        # Tenta buscar com o ano primeiro, se ele existir
+        if year:
+            raw_response = search.multi(
+                term=clean_query, 
+                language='pt-BR', 
+                year=year # <-- FORÇA A API A FILTRAR POR ANO
+            )
+            print(f"[DEBUG TMDb] Resposta crua (com ano {year}): {raw_response}")
+
+        # Se a busca com ano não retornar NADA, ou se não havia ano,
+        # tente a busca sem o ano.
+        if not year or not raw_response.get('results'):
+            if year: # Só para logar que a primeira tentativa falhou
+                 print(f"[DEBUG TMDb] Busca com ano {year} falhou. Tentando sem ano...")
+            
+            raw_response = search.multi(term=clean_query, language='pt-BR')
+            print(f"[DEBUG TMDb] Resposta crua (sem ano): {raw_response}")
+        # ^--- FIM DA CORREÇÃO 1 e 2 ---^
+            
         raw_results_list = raw_response.get('results', [])
 
         # Agora, filtramos os resultados para pegar APENAS filmes
         search_results = []
-        # V--- CORREÇÃO 2: Iterar na lista e checar o dict ---V
         for r_dict in raw_results_list:
             if r_dict.get('media_type') == 'movie':
                 search_results.append(r_dict)
-        # ^--- FIM DAS CORREÇÕES 2 ---^
 
         if not search_results:
             print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: 0")
@@ -46,22 +61,15 @@ def search_movie_options(query: str) -> list:
         
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: {len(search_results)}")
         
-        # 3. Filtro inicial por ano (Pós-filtro)
-        filtered_results = []
-        if year:
-            # V--- CORREÇÃO 3: 'r' é um dict, usar .get() ---V
-            for r_dict in search_results:
-                release_date = r_dict.get('release_date')
-                if release_date and str(year) in str(release_date):
-                    filtered_results.append(r_dict)
-            # ^--- FIM DA CORREÇÃO 3 ---^
-        
-        if not filtered_results:
-            filtered_results = search_results
+        # V--- CORREÇÃO 3: Remover filtro de ano manual ---V
+        # A API já fez o filtro de ano por nós (se o ano foi fornecido).
+        # Se não filtramos por ano na API, queremos todos os resultados.
+        # Portanto, nosso resultado filtrado é simplesmente o 'search_results'.
+        filtered_results = search_results
+        # ^--- FIM DA CORREÇÃO 3 ---^
 
         options = []
         # O loop agora pega os 3 primeiros resultados
-        # V--- CORREÇÃO 4: 'result_dict' é um dict ---V
         for result_dict in filtered_results[:3]:
             try:
                 tmdb_id_to_fetch = result_dict.get('id')
@@ -70,7 +78,7 @@ def search_movie_options(query: str) -> list:
 
                 details = movie_search.details(tmdb_id_to_fetch, append_to_response='translations')
                 
-                # --- LÓGICA DO TÍTULO INTELIGENTE (CORRIGIDA) ---
+                # --- LÓGICA DO TÍTULO INTELIGENTE (Mantida) ---
                 title_pt = details.title 
                 original_title = details.original_title
                 
@@ -80,27 +88,16 @@ def search_movie_options(query: str) -> list:
                 if english_translation:
                     english_title = english_translation
                 
-                # V--- INÍCIO DA CORREÇÃO ---V
-                
-                # O 'title' principal para checagem de automação DEVE ser o title_pt
                 main_title_for_check = title_pt 
-                
-                # Agora, definimos o texto do BOTÃO
-                # Por padrão, usamos o título em PT
                 button_title_to_use = title_pt 
 
-                # Se o título PT é o original E existe um em inglês...
                 if title_pt == original_title and english_title:
-                    # ...usamos o título em INGLÊS no botão.
                     button_title_to_use = english_title
                 
-                # Montamos o texto final do botão
                 if button_title_to_use != original_title:
                     final_button_text = f"{button_title_to_use} ({original_title})"
                 else:
                     final_button_text = button_title_to_use
-
-                # ^--- FIM DA CORREÇÃO ---^
 
                 year_value = 'N/A'
                 try:
@@ -108,7 +105,6 @@ def search_movie_options(query: str) -> list:
                         year_value = int(details.release_date.split('-')[0])
                 except: pass
                 
-                # V--- CORREÇÃO NO DICT DE RETORNO ---V
                 options.append({
                     'tmdb_id': details.id,
                     'title': main_title_for_check,    # <--- Sempre será o 'title_pt'
@@ -118,7 +114,6 @@ def search_movie_options(query: str) -> list:
                     'description': details.overview,
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
-                # ^--- FIM DA CORREÇÃO ---^
                 
             except TMDbException as e:
                 print(f"Erro da API TMDb ao processar {result_dict.get('id', 'ID_DESCONHECIDO')}: {e}")
