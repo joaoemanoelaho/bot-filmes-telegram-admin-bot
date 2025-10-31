@@ -1,6 +1,6 @@
 import re
 import unicodedata
-from tmdbv3api import TMDb, Movie, Search
+from tmdbv3api import TMDb, Movie, Search # Search não é mais usado, mas não quebra
 from tmdbv3api.exceptions import TMDbException
 from config import TMDB_API_KEY 
 
@@ -9,86 +9,83 @@ tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
 tmdb.language = 'pt-BR' 
 
-movie_search = Movie() # Para usar o .details()
-search = Search()      # Instância correta
+movie_search = Movie() # Para usar o .details() e .search()
 
-# Esta função de normalização é para a lógica de reordenação
 def normalize_str(s):
-    if not s: return ""
+    """Remove acentos, põe em minúsculas e remove espaços extras."""
+    if not s:
+        return ""
     s = s.lower().strip()
     return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
 
 def search_movie_options(query: str) -> list:
     """
-    Busca um filme e retorna os 3 melhores resultados encontrados pela API,
-    com os detalhes já em português.
+    Busca um filme, reordena por relevância, e filtra os 3 melhores
+    usando os 'details' para validar o ano.
     """
     try:
         # 1. Limpeza da query e extração do ano
         clean_query = query.replace('&', 'and')
         year_match = re.search(r'\((\d{4})\)', clean_query)
-        year = int(year_match.group(1)) if year_match else None
-        if year:
+        year_from_query = int(year_match.group(1)) if year_match else None
+        if year_from_query:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
-        # 2. V--- A CORREÇÃO DE OURO: Usar search.movie() ---V
-        
-        raw_response = {}
-        if year:
-            # Busca filmes, com idioma E ano.
-            raw_response = search.movie(term=clean_query, language='pt-BR', year=year)
-        else:
-            # Busca filmes, com idioma, sem ano.
-            raw_response = search.movie(term=clean_query, language='pt-BR')
-            
-        print(f"[DEBUG TMDb] Resposta crua de search.movie: {raw_response}")
-        
-        # O resultado já é uma lista de dicionários de FILMES.
-        # Não precisamos mais filtrar por 'media_type'.
-        search_results = raw_response.get('results', [])
-        # ^--- FIM DA CORREÇÃO ---^
-        
+        # 2. Busca inicial
+        search_results = movie_search.search(clean_query)
+
         if not search_results:
-            print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: 0")
+            print(f"Query: '{clean_query}' | Ano: {year_from_query} | Resultados Encontrados: 0")
             return []
         
-        print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: {len(search_results)}")
+        print(f"Query: '{clean_query}' | Ano: {year_from_query} | Resultados Encontrados: {len(search_results)}")
         
         # 3. V--- REMOVIDO FILTRO DE ANO MANUAL ---V
-        # A API já filtrou o ano para nós. 'search_results' é a nossa lista final.
-        
-        # 4. REORDENAÇÃO POR RELEVÂNCIA (Opcional, mas recomendado)
-        # Reordena a lista para priorizar matches exatos do título.
+        # Não podemos confiar no 'release_date' da lista de busca.
+        # Vamos filtrar DEPOIS de pegar os 'details'.
+
+        # 4. REORDENAÇÃO POR RELEVÂNCIA
         normalized_query = normalize_str(clean_query)
         
-        def sort_key(movie_dict):
-            title = movie_dict.get('title', '')
+        def sort_key(movie):
+            title = getattr(movie, 'title', '')
             normalized_title = normalize_str(title)
-            # Critério 1: Match exato (False=0) vem antes
             is_not_exact_match = (normalized_title != normalized_query)
-            # Critério 2: Popularidade
-            popularity = -movie_dict.get('popularity', 0)
+            popularity = -getattr(movie, 'popularity', 0)
             return (is_not_exact_match, popularity)
 
         try:
             final_sorted_list = sorted(search_results, key=sort_key)
-            print(f"Reordenado. Top 3 títulos: {[m.get('title', 'N/A') for m in final_sorted_list[:3]]}")
+            print(f"Reordenado. Top 5 Títulos (pré-details): {[getattr(m, 'title', 'N/A') for m in final_sorted_list[:5]]}")
         except Exception as e:
             print(f"Erro ao reordenar: {e}. Usando lista antiga.")
-            final_sorted_list = search_results # Fallback
-            
+            final_sorted_list = search_results
+        
         options = []
-        # O loop agora pega os 3 primeiros da lista REORDENADA
-        for result_dict in final_sorted_list[:3]:
+        # 5. V--- NOVO LOOP DE FILTRAGEM ---V
+        # Iteramos nos 5 melhores resultados reordenados
+        for result_movie in final_sorted_list[:5]:
             try:
-                tmdb_id_to_fetch = result_dict.get('id')
-                if not tmdb_id_to_fetch:
-                    continue 
-
-                # Seu código original para buscar 'details' (está perfeito)
-                details = movie_search.details(tmdb_id_to_fetch, append_to_response='translations')
+                if not isinstance(result_movie, Movie):
+                    continue
                 
-                # --- LÓGICA DO TÍTULO INTELIGENTE (Mantida) ---
+                details = movie_search.details(result_movie.id, append_to_response='translations')
+                
+                # V--- FILTRO DE ANO NOVO (usando details) ---V
+                year_value = 0
+                if details.release_date:
+                    try:
+                        year_value = int(details.release_date.split('-')[0])
+                    except: pass # Deixa year_value como 0
+                
+                # Se o usuário especificou um ano (ex: 2023) E
+                # o ano do filme (ex: 2007) for diferente, PULE este filme.
+                if year_from_query and year_value != year_from_query:
+                    print(f"FILTRADO: '{details.title}' (Ano {year_value}) não bate com o ano da query ({year_from_query})")
+                    continue
+                # ^--- FIM DO FILTRO DE ANO ---^
+
+                # --- LÓGICA DO TÍTULO INTELIGENTE (Sua lógica, está perfeita) ---
                 title_pt = details.title 
                 original_title = details.original_title
                 
@@ -108,25 +105,23 @@ def search_movie_options(query: str) -> list:
                     final_button_text = f"{button_title_to_use} ({original_title})"
                 else:
                     final_button_text = button_title_to_use
-
-                year_value = 'N/A'
-                try:
-                    if details.release_date:
-                        year_value = int(details.release_date.split('-')[0])
-                except: pass
                 
                 options.append({
                     'tmdb_id': details.id,
                     'title': main_title_for_check,    
                     'button_text': final_button_text, 
-                    'year': year_value,
+                    'year': year_value if year_value != 0 else 'N/A',
                     'genre': details.genres[0]['name'] if details.genres else 'N/A',
                     'description': details.overview,
                     'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
                 })
                 
+                # Se já temos 3 opções, não precisamos buscar mais
+                if len(options) >= 3:
+                    break
+                    
             except TMDbException as e:
-                print(f"Erro da API TMDb ao processar {result_dict.get('id', 'ID_DESCONHECIDO')}: {e}")
+                print(f"Erro da API TMDb ao processar {getattr(result_movie, 'id', 'ID_DESCONHECIDO')}: {e}")
                 continue
             except Exception as e:
                 print(f"Erro ao processar resultado individual: {e}")
