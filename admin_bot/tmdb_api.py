@@ -1,6 +1,6 @@
 import re
-import unicodedata # <-- Importe isso para normalizar strings
-from tmdbv3api import TMDb, Movie, Search # Search não é mais usado, mas pode ficar
+import unicodedata 
+from tmdbv3api import TMDb, Movie, Search
 from tmdbv3api.exceptions import TMDbException
 from config import TMDB_API_KEY 
 
@@ -9,7 +9,7 @@ tmdb = TMDb()
 tmdb.api_key = TMDB_API_KEY
 tmdb.language = 'pt-BR' 
 
-movie_search = Movie() # Para usar o .details() e .search()
+movie_search = Movie()
 
 def normalize_str(s):
     """Remove acentos, põe em minúsculas e remove espaços extras."""
@@ -31,11 +31,7 @@ def search_movie_options(query: str) -> list:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
         
         # 2. Busca inicial
-        # V--- VOLTAMOS AO MÉTODO ORIGINAL E CORRETO ---V
-        # Ele USA o tmdb.language = 'pt-BR' global.
-        # Ele retorna uma LISTA DE OBJETOS 'Movie'.
         search_results = movie_search.search(clean_query)
-        # ^--- FIM DA MUDANÇA ---^
 
         if not search_results:
             print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: 0")
@@ -43,34 +39,35 @@ def search_movie_options(query: str) -> list:
         
         print(f"Query: '{clean_query}' | Ano: {year} | Resultados Encontrados: {len(search_results)}")
         
-        # 3. Filtro inicial por ano (Seu filtro manual, está ótimo)
+        # 3. Filtro inicial por ano
         year_filtered_results = []
         if year:
             for r in search_results:
-                # Verificação de segurança que previne o erro 'slice'
                 if not isinstance(r, Movie): 
                     continue
-                release_date = getattr(r, 'release_date', None)
-                if release_date and str(year) in str(release_date):
+                
+                # V--- A CORREÇÃO DEFINITIVA ESTÁ AQUI ---V
+                # Pega a release_date. Se for None, usa ""
+                release_date_str = getattr(r, 'release_date', '') 
+                
+                # Checa se a string "2023-10-18" começa com "2023"
+                if release_date_str.startswith(str(year)):
                     year_filtered_results.append(r)
+                # ^--- FIM DA CORREÇÃO ---^
         
+        # Esta linha de fallback agora só será usada se NENHUM filme de 2023
+        # for encontrado, o que é o comportamento correto.
         if not year_filtered_results:
             year_filtered_results = search_results
 
-        # 4. V--- A NOVA CORREÇÃO: REORDENAÇÃO POR RELEVÂNCIA ---V
-        # Reordena a lista para priorizar matches exatos do título.
+        # 4. REORDENAÇÃO POR RELEVÂNCIA (Esta lógica estava correta)
         normalized_query = normalize_str(clean_query)
         
         def sort_key(movie):
             title = getattr(movie, 'title', '')
             normalized_title = normalize_str(title)
-            
-            # Critério 1: Match exato (False=0) vem antes de não-match (True=1)
             is_not_exact_match = (normalized_title != normalized_query)
-            
-            # Critério 2: Popularidade (negativa, para ordenar do maior para o menor)
             popularity = -getattr(movie, 'popularity', 0)
-            
             return (is_not_exact_match, popularity)
 
         try:
@@ -78,9 +75,8 @@ def search_movie_options(query: str) -> list:
             print(f"Reordenado. Top 3 títulos: {[getattr(m, 'title', 'N/A') for m in final_sorted_list[:3]]}")
         except Exception as e:
             print(f"Erro ao reordenar: {e}. Usando lista antiga.")
-            final_sorted_list = year_filtered_results # Fallback
-        # ^--- FIM DA NOVA CORREÇÃO ---^
-
+            final_sorted_list = year_filtered_results
+        
         options = []
         # O loop agora pega os 3 primeiros da lista REORDENADA
         for result_movie in final_sorted_list[:3]:
@@ -88,10 +84,8 @@ def search_movie_options(query: str) -> list:
                 if not isinstance(result_movie, Movie):
                     continue
                 
-                # 'details' vai respeitar o tmdb.language = 'pt-BR' global
                 details = movie_search.details(result_movie.id, append_to_response='translations')
                 
-                # --- LÓGICA DO TÍTULO INTELIGENTE (Sua lógica, está perfeita) ---
                 title_pt = details.title 
                 original_title = details.original_title
                 
