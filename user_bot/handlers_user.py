@@ -397,10 +397,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     results.append(
         InlineQueryResultArticle(
             id="static_help",
-            title="Ajuda",
-            description="Como usar o bot de busca",
-            # Ícone de "Ajuda" (pode ser o mesmo do outro bot se achar a URL)
-            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
+            title="Ajuda", 
             input_message_content=InputTextMessageContent(
                 "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
                 "Para ver o menu principal, envie /start."
