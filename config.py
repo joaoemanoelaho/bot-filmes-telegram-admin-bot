@@ -21,6 +21,8 @@ STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID"))
 STORAGE_CHANNEL_ID_SERIES = int(os.getenv("STORAGE_CHANNEL_ID_SERIES"))
 PUSHINPAY_API_KEY = os.getenv("PUSHINPAY_API_KEY")
 
+ADMIN_IDS = list(map(int, os.getenv("ADMIN_IDS", "").split(",")))
+
 M3U_FILE_PATH = os.getenv("M3U_FILE_PATH")
 DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
 LOG_FILE = os.getenv("LOG_FILE")
