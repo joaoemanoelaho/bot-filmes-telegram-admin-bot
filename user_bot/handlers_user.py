@@ -397,7 +397,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Legenda que vai ABAIXO da foto (saída)
             photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
@@ -408,13 +407,13 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             # 1. Pega a URL do pôster grande
             poster_url_grande = movie.get('poster_url')
             
-            # 2. Cria uma URL de miniatura PEQUENA (troca 'w500' por 'w154')
-            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w154/')
+            # 2. Cria uma URL de miniatura PEQUENA (troca 'w500' por 'w92')
+            # w92 é o tamanho de thumbnail do TMDb
+            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
             
             # ^--- FIM DA CORREÇÃO ---^
 
             results.append(
-                # Usamos Photo para a saída de foto nativa
                 InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
                     
@@ -428,7 +427,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     # URL da miniatura PEQUENA (para a lista)
                     thumbnail_url=poster_url_pequeno, 
                     
-                    # Legenda e botões que aparecem DEPOIS de clicar
                     caption=photo_caption,
                     parse_mode="Markdown",
                     reply_markup=reply_markup
@@ -437,7 +435,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
     # cache_time=10 força o Telegram a atualizar a busca a cada 10s
     await update.inline_query.answer(results, cache_time=10, is_personal=True)
-
+    
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
