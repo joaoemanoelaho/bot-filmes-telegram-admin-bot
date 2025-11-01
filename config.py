@@ -36,8 +36,6 @@ API_KEY = TMDB_API_KEY
 BASE_URL = os.getenv("BASE_URL")
 
 # Validações
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN não configurado!")
 if not TMDB_API_KEY:
     raise ValueError("❌ TMDB_API_KEY não configurado!")
 if not SUPABASE_URL or not SUPABASE_KEY:
