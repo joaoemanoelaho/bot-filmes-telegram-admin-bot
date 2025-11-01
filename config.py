@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Telegram
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN")
 
 # TMDb
@@ -47,8 +46,6 @@ if not API_ID or not API_HASH:
     raise ValueError("❌ Credenciais Pyrogram não configuradas!")
 if not STORAGE_CHANNEL_ID:
     raise ValueError("❌ STORAGE_CHANNEL_ID não configurado!")
-if not ADMIN_IDS:
-    raise ValueError("❌ ADMIN_IDS não configurado!")
 if not PUSHINPAY_API_KEY:
     raise ValueError("❌ PUSHINPAY_API_KEY não configurado!")
 if not TASTEDIVE_API_KEY:
