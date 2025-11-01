@@ -397,21 +397,15 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Legenda que vai ABAIXO da foto (saída)
             photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
-            # V--- A CORREÇÃO DEFINITIVA ---V
-            
-            # 1. Pega a URL do pôster grande
+            # Pega a URL do pôster grande
             poster_url_grande = movie.get('poster_url')
-            
-            # 2. Cria uma URL de miniatura PEQUENA (troca 'w500' por 'w154')
-            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w154/')
-            
-            # ^--- FIM DA CORREÇÃO ---^
+            # Cria uma URL de miniatura PEQUENA (w92)
+            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
 
             results.append(
                 # Usamos Photo para a saída de foto nativa
@@ -424,20 +418,34 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                     
                     # URL da foto grande (para a saída)
                     photo_url=poster_url_grande, 
-                    
                     # URL da miniatura PEQUENA (para a lista)
                     thumbnail_url=poster_url_pequeno, 
                     
-                    # Legenda e botões que aparecem DEPOIS de clicar
                     caption=photo_caption,
                     parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
             )
+    
+    # V--- A MÁGICA ESTÁ AQUI (Baseado no seu screenshot do GitHub) ---V
+    # Se houver resultados, adicionamos um "artigo" falso no final.
+    # Isso FORÇA o cliente Android a mudar para o modo de lista vertical.
+    if results:
+        results.append(
+            InlineQueryResultArticle(
+                id="force_list_view", # ID único
+                title="Buscar...", # Título simples
+                description="Resultados para: " + query_text,
+                # Um ícone de lupa genérico
+                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png", 
+                input_message_content=InputTextMessageContent(f"Buscando por: {query_text}")
+            )
+        )
+    # ^--- FIM DA MÁGICA ---^
             
     # cache_time=10 força o Telegram a atualizar a busca a cada 10s
     await update.inline_query.answer(results, cache_time=10, is_personal=True)
-    
+
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
