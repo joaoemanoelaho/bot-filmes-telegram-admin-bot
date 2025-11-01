@@ -377,8 +377,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 id="help_bubble",
                 title="Digite o nome do Filme",
                 description="Comece a digitar no teclado para que os resultados da busca apareçam aqui.",
-                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png",  # URL de um ícone de lupa cinza
-                input_message_content=InputTextMessageContent("👍") # Ação ao clicar (não faz nada demais)
+                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png",
+                input_message_content=InputTextMessageContent("👍")
             )
         ]
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
@@ -399,40 +399,39 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             
             # V--- INÍCIO DA CORREÇÃO ---V
             
-            # 1. Removemos o 'card_text_content' que tinha o link invisível.
-            # 2. Criamos uma legenda (caption) limpa para a foto.
-            photo_caption = (
+            # 1. Este será o texto enviado QUANDO O USUÁRIO CLICAR.
+            # Removemos o link do pôster para evitar a "citação".
+            card_text_content = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
             results.append(
-                # 3. Mudamos de 'InlineQueryResultArticle' para 'InlineQueryResultPhoto'
-                InlineQueryResultPhoto(
+                # 2. Voltamos para 'InlineQueryResultArticle'
+                InlineQueryResultArticle(
                     id=f"movie_{movie['movie_id']}",
+                    
+                    # 3. Isso cria a LISTA VERTICAL que você quer
                     title=movie['title'],
                     description=f"{movie['year']} - {movie['genre']}",
+                    thumbnail_url=movie.get('poster_url'),
                     
-                    # URL da foto principal
-                    photo_url=movie.get('poster_url'), 
+                    # 4. Anexa os botões
+                    reply_markup=reply_markup,
                     
-                    # URL da miniatura (pode ser a mesma)
-                    thumbnail_url=movie.get('poster_url'), 
-                    
-                    # 4. Usamos 'caption' para o texto que fica ABAIXO da imagem
-                    caption=photo_caption,
-                    parse_mode="Markdown",
-                    
-                    # 5. Adicionamos os botões
-                    reply_markup=reply_markup
-                    
-                    # Removemos 'title', 'description' e 'input_message_content'
-                    # pois eles não são necessários aqui.
+                    # 5. Define a MENSAGEM DE SAÍDA como o texto limpo
+                    input_message_content=InputTextMessageContent(
+                        card_text_content,
+                        parse_mode="Markdown",
+                        # Garante que NENHUMA preview de link seja gerada
+                        disable_web_page_preview=True 
+                    )
                 )
             )
             # ^--- FIM DA CORREÇÃO ---^
-            
+
     await update.inline_query.answer(results)
+
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
