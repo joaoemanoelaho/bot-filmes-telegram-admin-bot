@@ -371,6 +371,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     """Lida com as buscas em modo inline."""
     query_text = update.inline_query.query
 
+    # Esta parte (quando a busca está vazia) continua igual
     if not query_text:
         help_result = [
             InlineQueryResultArticle(
@@ -384,8 +385,48 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
-    results_from_db = db.search_movies(query_text)
+    # --- A MUDANÇA COMEÇA AQUI ---
+    
+    # 1. Cria a lista de resultados vazia
     results = []
+
+    # V--- NOVO: ITENS ESTÁTICOS DO MENU ---V
+    # Adiciona "Artigos" fixos no topo da lista, assim como o @TuaSerieTSbot
+    
+    # Artigo 1: Top Filmes
+    results.append(
+        InlineQueryResultArticle(
+            id="static_top_filmes",
+            title="Top Filmes 🏆",
+            description="Veja os filmes mais assistidos",
+            # Ícone de Troféu
+            thumbnail_url="https://cdn-icons-png.flaticon.com/512/2617/2617743.png", 
+            # Quando clicado, envia uma mensagem
+            input_message_content=InputTextMessageContent(
+                "Para ver o ranking Top Filmes, por favor, envie o comando /start e clique em 'Top Filmes 🏆'."
+            )
+        )
+    )
+    
+    # Artigo 2: Pedir Filme
+    results.append(
+        InlineQueryResultArticle(
+            id="static_pedir",
+            title="Pedir Filme/Série 💡",
+            description="Não achou o que queria? Peça aqui!",
+            # Ícone de Lâmpada
+            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png",
+            # Quando clicado, envia uma mensagem
+            input_message_content=InputTextMessageContent(
+                "Para pedir um filme ou série, por favor, envie o comando /start e clique em 'Pedir Filme/Série 💡'."
+            )
+        )
+    )
+    # ^--- FIM DOS ITENS ESTÁTICOS ---^
+
+    # 2. Agora, busca os filmes no DB e adiciona o resto dos resultados
+    results_from_db = db.search_movies(query_text)
+    
     for movie in results_from_db:
         if movie.get('poster_url'):
             bot_username = context.bot.username
@@ -402,9 +443,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
-            # Pega a URL do pôster grande
             poster_url_grande = movie.get('poster_url')
-            # Cria uma URL de miniatura PEQUENA (w92)
+            # Usamos o pôster pequeno (w92) para a miniatura
             poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
 
             results.append(
@@ -427,24 +467,11 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 )
             )
     
-    # V--- A MÁGICA ESTÁ AQUI (Baseado no seu screenshot do GitHub) ---V
-    # Se houver resultados, adicionamos um "artigo" falso no final.
-    # Isso FORÇA o cliente Android a mudar para o modo de lista vertical.
-    if results:
-        results.append(
-            InlineQueryResultArticle(
-                id="force_list_view", # ID único
-                title="Buscar...", # Título simples
-                description="Resultados para: " + query_text,
-                # Um ícone de lupa genérico
-                thumbnail_url="https://cdn-icons-png.flaticon.com/512/3931/3931294.png", 
-                input_message_content=InputTextMessageContent(f"Buscando por: {query_text}")
-            )
-        )
-    # ^--- FIM DA MÁGICA ---^
-            
-    # cache_time=10 força o Telegram a atualizar a busca a cada 10s
+    # 3. Envia a lista MISTA (Artigos + Fotos)
+    # Não precisamos mais do "artigo hack" no final,
+    # porque já temos artigos de verdade no começo!
     await update.inline_query.answer(results, cache_time=10, is_personal=True)
+    
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
