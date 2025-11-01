@@ -34,6 +34,9 @@ USER_AGENT = os.getenv("USER_AGENT")
 PROXY_URL = os.getenv("PROXY_URL")
 SESSION_STRING = os.environ.get('PYROGRAM_SESSION_STRING')
 
+API_KEY = TMDB_API_KEY
+BASE_URL = os.getenv("BASE_URL")
+
 # Validações
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN não configurado!")
