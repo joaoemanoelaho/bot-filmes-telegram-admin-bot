@@ -68,6 +68,11 @@ async def startup():
         application.add_handler(handlers.admin_video_handler)
         application.add_handler(handlers.get_chat_id_command_handler)
         application.add_handler(handlers.channel_video_handler)
+        application.add_handler(handlers.admin_video_handler) # O roteador manual
+        application.add_handler(handlers.channel_video_handler) # Canal de Filmes
+
+        # --- ADICIONE ESTA LINHA ---
+        application.add_handler(handlers.channel_series_handler) # Canal de Séries
         
         print("[DEBUG-ADMIN] Adicionando error_handler...")
         application.add_error_handler(error_handler)

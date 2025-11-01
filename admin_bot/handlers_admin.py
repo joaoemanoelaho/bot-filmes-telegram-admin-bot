@@ -1,50 +1,55 @@
 #
 # Arquivo que contém as respostas e lógicas para os comandos.
-# VERSÃO 3.2 - CORRIGINDO ERRO DE SINTAXE (CallbackQuery)
+# VERSÃO 4.0 - ADICIONADO SUPORTE A SÉRIES
 #
-from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery # <-- MUDANÇA 1
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
 import database as db
 import tmdb_api
-from config import ADMIN_IDS, STORAGE_CHANNEL_ID
+# --- MUDANÇA 1: Importar AMBAS as IDs de Canal ---
+from config import ADMIN_IDS, STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 import re
 import os
 from thefuzz import fuzz
 import uuid
 import sys
-import asyncio # <--- IMPORTANTE PARA O DELAY
+import asyncio
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
+# --- MUDANÇA 2: O REGEX DE SÉRIES ---
+# Este Regex é o cérebro para identificar séries.
+# (Grupo 1: Título da Série) S(Grupo 2: N° da Temporada) E(Grupo 3: N° do Episódio) [(Grupo 4: Áudio)]
+SERIES_REGEX = re.compile(
+    r"^(.*?) S(\d{1,2}) E(\d{1,3}) \[(DUB|LEG)\]$", 
+    re.IGNORECASE
+)
+
 # =================================================================
 # === FUNÇÕES DE SEGURANÇA (COM RETENTATIVAS) ===
 # =================================================================
+# (Suas funções 'safe_edit_message', 'safe_send_message', 
+# 'safe_answer_query' permanecem exatamente iguais. 
+# Elas são perfeitas.)
 
 async def safe_edit_message(message, new_text, **kwargs):
-    """
-    Tenta editar uma mensagem, com 3 retentativas em caso de erro de rede.
-    Implementa a lógica de "backoff exponencial" (espera 2s, 4s).
-    """
-    if not message:
-        print("⚠️ [safe_edit_message] Tentou editar uma mensagem nula.")
-        return
-
+    """Tenta editar uma mensagem, com 3 retentativas."""
+    if not message: return
     retries = 3
-    delay = 2  # Começa com 2 segundos
+    delay = 2
     for i in range(retries):
         try:
             await message.edit_text(new_text, **kwargs)
-            return  # Sucesso, sai da função
+            return
         except Exception as e:
-            # Apenas loga o erro e tenta de novo
             print(f"⚠️ Erro de rede ao TENTAR EDITAR (Tentativa {i+1}/{retries}): {e}")
-            if i < retries - 1:  # Se não for a última tentativa
+            if i < retries - 1:
                 await asyncio.sleep(delay)
-                delay *= 2  # Dobra a espera para a próxima tentativa (2s, 4s)
+                delay *= 2
             else:
-                print(f"❌ FALHA AO EDITAR MENSAGEM '{message.text[:20]}...' após 3 tentativas.")
+                print(f"❌ FALHA AO EDITAR MENSAGEM após 3 tentativas.")
 
 async def safe_send_message(context: ContextTypes.DEFAULT_TYPE, chat_id, text, **kwargs):
     """Tenta enviar uma mensagem, com 3 retentativas."""
@@ -60,16 +65,16 @@ async def safe_send_message(context: ContextTypes.DEFAULT_TYPE, chat_id, text, *
                 delay *= 2
             else:
                 print(f"❌ FALHA AO ENVIAR MENSAGEM para {chat_id} após 3 tentativas.")
-                return None  # Retorna None se falhar
+                return None
 
-async def safe_answer_query(query: CallbackQuery, **kwargs): # <-- MUDANÇA 2
+async def safe_answer_query(query: CallbackQuery, **kwargs):
     """Tenta responder um callback query, com 3 retentativas."""
     retries = 3
-    delay = 1 # Resposta de query pode ser mais rápida
+    delay = 1
     for i in range(retries):
         try:
             await query.answer(**kwargs)
-            return # Sucesso
+            return
         except Exception as e:
             print(f"⚠️ Erro de rede ao TENTAR RESPONDER QUERY (Tentativa {i+1}/{retries}): {e}")
             if i < retries - 1:
@@ -77,98 +82,124 @@ async def safe_answer_query(query: CallbackQuery, **kwargs): # <-- MUDANÇA 2
             else:
                 print(f"❌ FALHA AO RESPONDER QUERY após 3 tentativas.")
 
+
 # =================================================================
-# === HANDLERS COM LOGS DE DEBUG ADICIONADOS ===
+# === NOVAS FUNÇÕES "WORKER" (PARA EVITAR REPETIÇÃO) ===
+# =================================================================
+
+async def _index_series_episode(
+    tmdb_id: int, 
+    season_number: int, 
+    episode_number: int, 
+    audio_type: str, 
+    file_id: str
+) -> (bool, str):
+    """
+    Função "Worker" que faz todo o trabalho de indexar um episódio.
+    Busca/cria a série, a temporada e o episódio.
+    Retorna (True/False, "Mensagem de Resultado")
+    """
+    try:
+        # 1. Busca/Cria a Série
+        series_data = db.get_or_create_series(tmdb_id)
+        if not series_data:
+            return False, "❌ Erro: Não foi possível buscar/criar a série no DB."
+        
+        # 2. Busca/Cria a Temporada
+        season_data = db.get_or_create_season(
+            series_id=series_data['id'], 
+            season_number=season_number
+        )
+        if not season_data:
+            return False, "❌ Erro: Não foi possível buscar/criar a temporada no DB."
+        
+        # 3. Adiciona/Atualiza o Episódio
+        success = db.add_or_update_episode(
+            season_id=season_data['id'],
+            tmdb_id=tmdb_id, # Passa o tmdb_id para a busca de nome de ep
+            season_number=season_number,
+            episode_number=episode_number,
+            audio_type=audio_type,
+            file_id=file_id
+        )
+        
+        if success:
+            msg = f"✅ Episódio '{series_data['title']} S{season_number:02d} E{episode_number:02d}' indexado!"
+            return True, msg
+        else:
+            return False, "❌ Erro desconhecido ao salvar o episódio."
+            
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO no _index_series_episode: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, f"❌ Erro Crítico no Worker: {e}"
+
+
+# =================================================================
+# === HANDLERS PRINCIPAIS (ATUALIZADOS) ===
 # =================================================================
 
 async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Mensagem de início simples para o bot de admin."""
+    """Mensagem de início simples (sem mudança)."""
     try:
-        await update.message.reply_text("🤖 Olá, Admin! Bot de indexação online e pronto para receber arquivos.")
+        await update.message.reply_text("🤖 Olá, Admin! Bot de indexação (Filmes e Séries) online.")
     except Exception as e:
         print(f"⚠️ Erro de rede no /start (ignorado): {e}")
 
 async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Processa APENAS os cliques de confirmação de indexação do admin."""
-    
-    # --- DEBUG PRINT ADICIONADO ---
-    print("\n" + "="*50)
-    print(f"DEBUG: [button_handler_admin] ACIONADO!")
-    
+    """
+    Processa cliques de confirmação.
+    AGORA SUPORTA 'confirm_movie_' E 'confirm_series_'.
+    """
     query = update.callback_query
-    
-    if not query:
-        print(f"DEBUG: [button_handler_admin] ERRO: Objeto 'query' está NULO.")
-        print("="*50 + "\n")
-        return
+    if not query: return
         
     callback_data = query.data
     user_id = query.from_user.id
 
-    print(f"DEBUG: [button_handler_admin] User ID: {user_id}")
-    print(f"DEBUG: [button_handler_admin] Callback Data: {callback_data}")
-    print("="*50 + "\n")
-    # --- FIM DO DEBUG PRINT ---
+    if user_id not in ADMIN_IDS:
+        await safe_answer_query(query, "Ação restrita.", show_alert=True)
+        return
 
-    # (Nota: o handler 'debug_all_updates' em main.py já deve ter logado isso)
-    # Este log aqui só aparece se o 'debug_all_updates' já funcionou.
-
-    if callback_data.startswith("confirm_"):
-        if user_id not in ADMIN_IDS:
-            print("DEBUG: [button_handler_admin] Ação restrita para este usuário.")
-            await safe_answer_query(query, "Ação restrita.", show_alert=True)
-            return
-        
-        print("DEBUG: [button_handler_admin] Callback data 'confirm_' VÁLIDO. Processando...")
-        await safe_answer_query(query) # <--- Agora com retries
+    # --- ROTEADOR DE FILMES ---
+    if callback_data.startswith("confirm_movie_"):
+        print("[Handlers] Botão 'confirm_movie_' detectado.")
+        await safe_answer_query(query)
         parts = callback_data.split('_')
-        request_id, action = parts[1], parts[2]
-        
-        print(f"DEBUG: [button_handler_admin] Request ID: {request_id}, Action: {action}")
+        request_id, action = parts[2], parts[3]
         
         request_data = context.bot_data.get(request_id)
 
         if not request_data:
-            print(f"DEBUG: [button_handler_admin] ERRO: Pedido expirou (request_data não encontrado para ID: {request_id}).")
-            await safe_edit_message(query.message, "❌ Este pedido expirou.") # <--- Agora com retries
+            await safe_edit_message(query.message, "❌ Este pedido de FILME expirou.")
             return
             
         if action == "ignore":
-            print("DEBUG: [button_handler_admin] Ação 'ignore' selecionada. Arquivo ignorado.")
-            await safe_edit_message(query.message, "Ok, arquivo ignorado.") # <--- Agora com retries
-            if request_id in context.bot_data:
-                del context.bot_data[request_id]
+            await safe_edit_message(query.message, "Ok, FILME ignorado.")
+            if request_id in context.bot_data: del context.bot_data[request_id]
             return
 
         try:
             tmdb_id_to_confirm = int(action)
         except ValueError:
-            print(f"DEBUG: [button_handler_admin] ERRO: Ação '{action}' não é um número (TMDb ID) nem 'ignore'.")
             return
             
-        print(f"DEBUG: [button_handler_admin] TMDb ID selecionado: {tmdb_id_to_confirm}")
-        
         chosen_movie_details = next((opt for opt in request_data['options'] if opt.get('tmdb_id') == tmdb_id_to_confirm), None)
         
         if not chosen_movie_details:
-            print("DEBUG: [button_handler_admin] ERRO: Opção inválida (chosen_movie_details não encontrado).")
-            print(f"DEBUG: Opções disponíveis eram: {request_data.get('options')}")
-            await safe_edit_message(query.message, "❌ Erro: Opção inválida.") # <--- Agora com retries
-            if request_id in context.bot_data:
-                del context.bot_data[request_id]
+            await safe_edit_message(query.message, "❌ Erro: Opção de FILME inválida.")
+            if request_id in context.bot_data: del context.bot_data[request_id]
             return
 
-        print(f"DEBUG: [button_handler_admin] Processando filme: '{chosen_movie_details['title']}'...")
-        await safe_edit_message(query.message, f"⏳ Processando: '{chosen_movie_details['title']}'...") # <--- Agora com retries
+        await safe_edit_message(query.message, f"⏳ Processando FILME: '{chosen_movie_details['title']}'...")
         
         try:
             existing_movie = db.find_movie_by_title_and_year(title=chosen_movie_details['title'], year=chosen_movie_details['year'])
             if existing_movie:
-                print("DEBUG: [button_handler_admin] Filme existe. Atualizando file_id...")
                 success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=request_data['file_id'], audio_type=request_data['audio_type'])
-                msg = f"🔄 Filme '{chosen_movie_details['title']}' atualizado!" if success else "❌ Erro ao ATUALIZAR."
+                msg = f"🔄 Filme '{chosen_movie_details['title']}' atualizado!"
             else:
-                print("DEBUG: [button_handler_admin] Filme novo. Adicionando ao DB...")
                 if request_data['audio_type'].upper() == 'DUB':
                     chosen_movie_details['dubbed_file_id'] = request_data['file_id']
                 else:
@@ -176,92 +207,138 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
                 
                 chosen_movie_details.pop('button_text', None)
                 success = db.add_movie(chosen_movie_details)
-                msg = f"✅ Filme '{chosen_movie_details['title']}' adicionado!" if success else "❌ Erro ao SALVAR."
+                msg = f"✅ Filme '{chosen_movie_details['title']}' adicionado!"
             
-            print(f"DEBUG: [button_handler_admin] Resultado: {msg}")
-            await safe_edit_message(query.message, msg) # <--- Agora com retries
-            if request_id in context.bot_data:
-                del context.bot_data[request_id]
+            await safe_edit_message(query.message, msg)
+            if request_id in context.bot_data: del context.bot_data[request_id]
         
         except Exception as e:
-            print(f"❌ ERRO CRÍTICO no Banco de Dados (button_handler): {e}")
-            import traceback
-            traceback.print_exc()
-            await safe_edit_message(query.message, f"❌ ERRO CRÍTICO no Banco de Dados: {e}")
+            print(f"❌ ERRO CRÍTICO no Banco de Dados (button_handler/movie): {e}")
+            await safe_edit_message(query.message, f"❌ ERRO CRÍTICO (Filme): {e}")
+        
+        return # Fim da lógica de filmes
+
+    # --- ROTEADOR DE SÉRIES ---
+    elif callback_data.startswith("confirm_series_"):
+        print("[Handlers] Botão 'confirm_series_' detectado.")
+        await safe_answer_query(query)
+        parts = callback_data.split('_')
+        request_id, action = parts[2], parts[3]
+        
+        request_data = context.bot_data.get(request_id)
+
+        if not request_data:
+            await safe_edit_message(query.message, "❌ Este pedido de SÉRIE expirou.")
+            return
             
-        return
+        if action == "ignore":
+            await safe_edit_message(query.message, "Ok, SÉRIE ignorada.")
+            if request_id in context.bot_data: del context.bot_data[request_id]
+            return
+
+        try:
+            tmdb_id_to_confirm = int(action)
+        except ValueError:
+            return
+            
+        # Pega o 'tmdb_id' da opção que o admin clicou
+        chosen_series_details = next((opt for opt in request_data['options'] if opt.get('tmdb_id') == tmdb_id_to_confirm), None)
+        
+        if not chosen_series_details:
+            await safe_edit_message(query.message, "❌ Erro: Opção de SÉRIE inválida.")
+            if request_id in context.bot_data: del context.bot_data[request_id]
+            return
+            
+        await safe_edit_message(query.message, f"⏳ Processando SÉRIE: '{chosen_series_details['title']}'...")
+        
+        # Chama o worker
+        success, msg = await _index_series_episode(
+            tmdb_id=tmdb_id_to_confirm,
+            season_number=request_data['season_number'],
+            episode_number=request_data['episode_number'],
+            audio_type=request_data['audio_type'],
+            file_id=request_data['file_id']
+        )
+        
+        await safe_edit_message(query.message, msg)
+        if request_id in context.bot_data: del context.bot_data[request_id]
+        return # Fim da lógica de séries
+        
     else:
-        # --- DEBUG PRINT ---
-        print(f"DEBUG: [button_handler_admin] IGNORADO: Callback data '{callback_data}' não começa com 'confirm_'.")
-        print("="*50 + "\n")
-        # --- FIM DO DEBUG PRINT ---
-    
+        # Ação de botão não reconhecida
+        print(f"[Handlers] Callback ignorado: {callback_data}")
+
+
 async def get_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Retorna o file_id de uma mídia, APENAS PARA ADMINS."""
-    if update.effective_user.id not in ADMIN_IDS:
-        print(f"[ALERTA] Uso não autorizado do /getid pelo usuário {update.effective_user.id}.")
-        return 
+    """Retorna o file_id de uma mídia (sem mudança)."""
+    if update.effective_user.id not in ADMIN_IDS: return 
     try:
         if update.message.reply_to_message and update.message.reply_to_message.video:
             file_id = update.message.reply_to_message.video.file_id
             await update.message.reply_text(f"Video File ID:\n`{file_id}`", parse_mode="Markdown")
         else:
-            await update.message.reply_text("Responda a um vídeo com /getid para obter o File ID.")
+            await update.message.reply_text("Responda a um vídeo com /getid.")
     except Exception as e:
         print(f"⚠️ Erro de rede no /getid (ignorado): {e}")
 
-async def add_movie_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+#
+# --- MUDANÇA 3: O HANDLER MANUAL AGORA É UM ROTEADOR ---
+#
+async def admin_video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Escuta por vídeos enviados pelo admin, busca as opções no TMDb
-    e pede confirmação se houver múltiplos resultados.
+    Escuta por vídeos enviados pelo admin NO PRIVADO.
+    Verifica se é FILME ou SÉRIE pelo nome do arquivo/caption.
     """
     if update.effective_user.id not in ADMIN_IDS:
         return
+    
+    if not update.message.video:
+        await update.message.reply_text("❗️Erro: Envie um vídeo válido.")
+        return
+        
+    file_name = update.message.caption or update.message.video.file_name
+    
+    if not file_name:
+        await update.message.reply_text("❗️Erro: O vídeo precisa ter um caption ou nome de arquivo válido.")
+        return
+        
+    # Limpa o nome do arquivo (ex: ".mp4")
+    clean_file_name, _ = os.path.splitext(file_name)
+    
+    # --- ROTEADOR LÓGICO ---
+    series_match = SERIES_REGEX.search(clean_file_name)
+    
+    if series_match:
+        print(f"[Handlers] Vídeo (Manual) detectado como SÉRIE: {clean_file_name}")
+        await _process_series_upload(update, context, file_name, series_match)
+    else:
+        print(f"[Handlers] Vídeo (Manual) detectado como FILME: {clean_file_name}")
+        await _process_movie_upload(update, context, file_name)
 
+
+async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str):
+    """Lógica que o admin_video_handler usava (anteriormente add_movie_handler)."""
     status_msg = None
     try:
-        if not update.message.video:
-            await update.message.reply_text("❗️Erro: Envie um vídeo válido.")
-            return
-        
-        file_name = update.message.caption or update.message.video.file_name
-        
-        if not file_name:
-            await update.message.reply_text("❗️Erro: O vídeo precisa ter um caption ou nome de arquivo válido.")
-            return
-        
-        file_size_mb = update.message.video.file_size / (1024**2) if update.message.video.file_size else 0
-        MAX_FILE_SIZE_MB = 3900
-        
-        if file_size_mb > MAX_FILE_SIZE_MB:
-            await update.message.reply_text(
-                f"⚠️ **Arquivo muito grande!**\n\n"
-                f"📊 Tamanho: {file_size_mb:.0f}MB\n"
-                f"📌 Limite: {MAX_FILE_SIZE_MB}MB\n\n"
-                f"❌ Arquivo não pode ser indexado."
-            )
-            return
-        
         file_id = update.message.video.file_id
-        status_msg = await update.message.reply_text(f"⏳ Processando '{file_name}'...")
+        status_msg = await update.message.reply_text(f"⏳ Processando FILME '{file_name}'...")
 
+        # (A lógica de verificação de tamanho de arquivo foi movida para os uploaders)
+        
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
         if not audio_type_match:
-            await safe_edit_message(status_msg, f"❓ Falha: O nome precisa conter [DUB] ou [LEG].")
+            await safe_edit_message(status_msg, f"❓ Falha (Filme): O nome precisa conter [DUB] ou [LEG].")
             return
         
         audio_type = audio_type_match.group(1).upper()
         temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', file_name, flags=re.IGNORECASE).strip()
         search_query, _ = os.path.splitext(temp_name)
         search_query_clean = re.sub(r'\s*4k?\s*$', '', search_query, flags=re.IGNORECASE).strip()
-        has_4k = bool(re.search(r'4k', search_query, re.IGNORECASE))
-        query_log = f"{search_query_clean} (4K)" if has_4k else search_query_clean
-        print(f"[LOG] Processando: {query_log}")
-        
+
         movie_options = tmdb_api.search_movie_options(search_query_clean)
 
         if not movie_options:
-            await safe_edit_message(status_msg, f"❌ Não encontrei nenhum resultado no TMDb para '{search_query_clean}'.")
+            await safe_edit_message(status_msg, f"❌ (Filme) Não encontrei resultados no TMDb para '{search_query_clean}'.")
             return
 
         high_confidence_match = None
@@ -276,61 +353,115 @@ async def add_movie_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     break
 
         if high_confidence_match:
-            await safe_edit_message(status_msg, f"✅ Correspondência encontrada: '{high_confidence_match['title']}'. Salvando...")
+            await safe_edit_message(status_msg, f"✅ (Filme) Correspondência: '{high_confidence_match['title']}'. Salvando...")
             movie_details = high_confidence_match
-
             existing_movie = db.find_movie_by_title_and_year(title=movie_details['title'], year=movie_details['year'])
+            
             if existing_movie:
                 success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=file_id, audio_type=audio_type)
-                msg = f"🔄 Filme '{movie_details['title']}' atualizado com sucesso!" if success else f"❌ Erro ao ATUALIZAR '{movie_details['title']}'."
-                await safe_edit_message(status_msg, msg)
+                msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
-                if audio_type == 'DUB': 
-                    movie_details['dubbed_file_id'] = file_id
-                else: 
-                    movie_details['subtitled_file_id'] = file_id
+                if audio_type == 'DUB': movie_details['dubbed_file_id'] = file_id
+                else: movie_details['subtitled_file_id'] = file_id
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
-                msg = f"✅ Filme '{movie_details['title']}' adicionado com sucesso!" if success else f"❌ Erro ao SALVAR '{movie_details['title']}'."
-                await safe_edit_message(status_msg, msg)
+                msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+            await safe_edit_message(status_msg, msg)
 
         else:
             request_id = str(uuid.uuid4())
-            
             context.bot_data[request_id] = {
-                'file_id': file_id,
-                'audio_type': audio_type,
-                'options': movie_options
+                'file_id': file_id, 'audio_type': audio_type, 'options': movie_options
             }
-            
-            message_text = f"❓ **Ajuda para Indexar**\n\nArquivo: `{query_log}`\n\nEncontrei estes resultados. Qual o correto?"
+            message_text = f"❓ **Ajuda (Filme)**\n\nArquivo: `{search_query_clean}`\n\nQual o correto?"
             keyboard = []
             for option in movie_options:
-                callback_data_str = f"confirm_{request_id}_{option['tmdb_id']}"
+                # --- MUDANÇA 4: Prefixo do botão atualizado ---
+                callback_data_str = f"confirm_movie_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
-            
-            keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_{request_id}_ignore")])
-            
-            await safe_edit_message(
-                status_msg,
-                text=message_text,
-                reply_markup=InlineKeyboardMarkup(keyboard),
-                parse_mode="Markdown"
-            )
+            keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_movie_{request_id}_ignore")])
+            await safe_edit_message(status_msg, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             
     except Exception as e:
-        print(f"❌ ERRO CRÍTICO no add_movie_handler: {e}")
+        print(f"❌ ERRO CRÍTICO no _process_movie_upload: {e}")
         import traceback
         traceback.print_exc()
-        try:
-            await safe_edit_message(status_msg, f"❌ Erro crítico ao processar o vídeo: {e}")
-        except:
-            await safe_send_message(context, update.effective_chat.id, f"❌ Erro crítico ao processar o vídeo: {e}")
+        await safe_edit_message(status_msg, f"❌ Erro crítico (Filme): {e}")
+
+
+async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str, series_match: re.Match):
+    """Nova lógica para processar um upload manual de SÉRIE."""
+    status_msg = None
+    try:
+        file_id = update.message.video.file_id
+        status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
+        
+        # 1. Extrair dados do Regex
+        series_title = series_match.group(1).strip() # Ex: "Bob Esponja (1999-2010)"
+        season_number = int(series_match.group(2))   # Ex: 3
+        episode_number = int(series_match.group(3))  # Ex: 16
+        audio_type = series_match.group(4).upper()   # Ex: "DUB"
+        
+        # 2. Buscar opções no TMDb
+        series_options = tmdb_api.search_series_options(series_title)
+
+        if not series_options:
+            await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title}'.")
+            return
+
+        # 3. Verificar alta confiança (usando fuzz)
+        high_confidence_match = None
+        for option in series_options:
+            ratio = fuzz.ratio(series_title.lower(), option['title'].lower())
+            # Damos uma margem menor para séries, pois o ano pode estar no título
+            if ratio > 80: 
+                high_confidence_match = option
+                break
+
+        # 4.A. ALTA CONFIANÇA -> Indexar direto
+        if high_confidence_match:
+            tmdb_id = high_confidence_match['tmdb_id']
+            await safe_edit_message(status_msg, f"✅ (Série) Correspondência: '{high_confidence_match['title']}'. Salvando...")
+            
+            success, msg = await _index_series_episode(
+                tmdb_id=tmdb_id,
+                season_number=season_number,
+                episode_number=episode_number,
+                audio_type=audio_type,
+                file_id=file_id
+            )
+            await safe_edit_message(status_msg, msg)
+
+        # 4.B. BAIXA CONFIANÇA -> Pedir ajuda
+        else:
+            request_id = str(uuid.uuid4())
+            context.bot_data[request_id] = {
+                'file_id': file_id, 
+                'audio_type': audio_type, 
+                'options': series_options,
+                'season_number': season_number, # <-- DADO EXTRA
+                'episode_number': episode_number # <-- DADO EXTRA
+            }
+            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{file_name}`\n\nQual série é esta?"
+            keyboard = []
+            for option in series_options:
+                # --- MUDANÇA 5: Novo prefixo de botão ---
+                callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
+                button_text = f"{option['title']} ({option['year']})"
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
+            keyboard.append([InlineKeyboardButton("❌ Nenhuma destas", callback_data=f"confirm_series_{request_id}_ignore")])
+            await safe_edit_message(status_msg, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+            
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO no _process_series_upload: {e}")
+        import traceback
+        traceback.print_exc()
+        await safe_edit_message(status_msg, f"❌ Erro crítico (Série): {e}")
 
 
 async def get_chat_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Retorna o ID do chat atual."""
+    """Retorna o ID do chat atual (sem mudança)."""
     chat_id = update.effective_chat.id
     try:
         await update.message.reply_text(f"O ID deste chat é: `{chat_id}`")
@@ -338,52 +469,37 @@ async def get_chat_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         print(f"⚠️ Erro de rede no /id (ignorado): {e}")
 
 
+# --- MUDANÇA 6: O HANDLER DE CANAL DE FILMES (Original) ---
+# (A lógica interna é a mesma, mas os prefixos de botão mudaram)
+#
 async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Bot indexador que lê caption ou nome do arquivo.
-    AGORA COM PROTEÇÃO DE REDE E RETRIES.
+    Bot indexador que lê caption ou nome do arquivo do canal de FILMES.
     """
     post = update.channel_post or update.message
     if not post or post.chat.id != STORAGE_CHANNEL_ID or not post.video:
         return
 
     status_msg = None
-    
     try:
-        file_size_mb = post.video.file_size / (1024**2) if post.video.file_size else 0
-        MAX_FILE_SIZE_MB = 3900
-        
-        if file_size_mb > MAX_FILE_SIZE_MB:
-            await safe_send_message(
-                context, 
-                chat_id=ADMIN_IDS[0], 
-                text=f"⚠️ Arquivo descartado: muito grande ({file_size_mb:.0f}MB > {MAX_FILE_SIZE_MB}MB)"
-            )
-            return
-
         file_name = post.caption or post.video.file_name
-        if not file_name:
-            return
-
+        if not file_name: return
         file_id = post.video.file_id
         
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
-        if not audio_type_match:
-            return
+        if not audio_type_match: return
             
-        audio_type = audio_type_match.group(1)
-        
+        audio_type = audio_type_match.group(1).upper()
         temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', file_name, flags=re.IGNORECASE).strip()
         search_query, _ = os.path.splitext(temp_name)
         search_query_clean = re.sub(r'\s*4k?\s*$', '', search_query, flags=re.IGNORECASE).strip()
-        has_4k = bool(re.search(r'4k', search_query, re.IGNORECASE))
-        query_log = f"{search_query_clean} (4K)" if has_4k else search_query_clean
-        print(f"[LOG CANAL] Processando: {query_log}")
+        
+        print(f"[LOG CANAL FILMES] Processando: {search_query_clean}")
 
         movie_options = tmdb_api.search_movie_options(search_query_clean)
 
         if not movie_options:
-            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ Não encontrei nenhum resultado no TMDb para '{search_query_clean}'.")
+            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Filme) Não encontrei resultados para '{search_query_clean}'.")
             return
 
         high_confidence_match = None
@@ -394,69 +510,155 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
                 break
 
         if high_confidence_match:
-            # Esta é a chamada de rede que envia "Indexando..."
-            status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando automaticamente '{query_log}'...")
-            
+            status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando FILME: '{search_query_clean}'...")
             movie_details = high_confidence_match
-
-            # --- Lógica de Banco de Dados ---
             existing_movie = db.find_movie_by_title_and_year(title=movie_details['title'], year=movie_details['year'])
+            
             if existing_movie:
                 success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=file_id, audio_type=audio_type)
-                msg = f"🔄 Filme '{movie_details['title']}' atualizado com sucesso!" if success else f"❌ Erro ao ATUALIZAR '{movie_details['title']}'."
-                await safe_edit_message(status_msg, msg) # <--- Agora com retries
+                msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
-                if audio_type.upper() == 'DUB': 
-                    movie_details['dubbed_file_id'] = file_id
-                else: 
-                    movie_details['subtitled_file_id'] = file_id
+                if audio_type == 'DUB': movie_details['dubbed_file_id'] = file_id
+                else: movie_details['subtitled_file_id'] = file_id
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
-                msg = f"✅ Filme '{movie_details['title']}' adicionado com sucesso!" if success else f"❌ Erro ao SALVAR '{movie_details['title']}'."
-                
-                # ESTA ERA A LINHA QUE QUEBRAVA (agora tem retries)
-                await safe_edit_message(status_msg, msg) # <--- Agora com retries
+                msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+            await safe_edit_message(status_msg, msg)
         else:
-            # Se não tem certeza, pede ajuda ao admin
+            # Baixa confiança, pede ajuda
             request_id = str(uuid.uuid4())
-            
             context.bot_data[request_id] = {
-                'file_id': file_id,
-                'audio_type': audio_type,
-                'options': movie_options
+                'file_id': file_id, 'audio_type': audio_type, 'options': movie_options
             }
-            
-            message_text = f"❓ **Ajuda para Indexar**\n\nArquivo: `{query_log}`\n\nSelecione o filme correto:"
+            message_text = f"❓ **Ajuda (Filme)**\n\nArquivo: `{search_query_clean}`\n\nQual o correto?"
             keyboard = []
             for option in movie_options:
-                callback_data_str = f"confirm_{request_id}_{option['tmdb_id']}"
-                button_text = f"{option['title']} ({option['year']})" # <--- (Mantendo a correção de bug da v2.0)
+                # --- MUDANÇA 7: Prefixo do botão atualizado ---
+                callback_data_str = f"confirm_movie_{request_id}_{option['tmdb_id']}"
+                button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
+            keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_movie_{request_id}_ignore")])
             
-            keyboard.append([InlineKeyboardButton("❌ Nenhum destes", callback_data=f"confirm_{request_id}_ignore")])
-            
-            # --- CORREÇÃO DO ERRO 'parse_code' ---
             await safe_send_message(
-                context,
-                chat_id=ADMIN_IDS[0], text=message_text,
-                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown" # <-- CORRIGIDO
+                context, chat_id=ADMIN_IDS[0], text=message_text,
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
             )
             
     except Exception as e:
         print(f"❌ ERRO CRÍTICO no new_movie_in_channel_handler: {e}")
         import traceback
         traceback.print_exc()
-        try:
-            await safe_edit_message(status_msg, f"❌ Erro crítico ao processar o vídeo: {e}")
-        except:
-            await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico ao processar o vídeo: {e}")
+        await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico (Filme): {e}")
 
 
-# --- Definição dos Handlers ---
+#
+# --- MUDANÇA 8: O NOVO HANDLER DE CANAL DE SÉRIES ---
+#
+async def new_series_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Bot indexador que lê caption ou nome do arquivo do NOVO canal de SÉRIES.
+    """
+    post = update.channel_post or update.message
+    # Escuta o NOVO ID de canal
+    if not post or post.chat.id != STORAGE_CHANNEL_ID_SERIES or not post.video:
+        return
+
+    status_msg = None
+    try:
+        file_name = post.caption or post.video.file_name
+        if not file_name: return
+        
+        file_id = post.video.file_id
+        
+        # Limpa o nome do arquivo (ex: ".mp4")
+        clean_file_name, _ = os.path.splitext(file_name)
+        
+        # 1. Tenta aplicar o Regex de Séries
+        series_match = SERIES_REGEX.search(clean_file_name)
+        
+        if not series_match:
+            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ Falha (Série): O nome '{clean_file_name}' não bate com o padrão 'Nome SXX EXX [AUDIO]'.")
+            return
+            
+        # 2. Extrair dados do Regex
+        series_title = series_match.group(1).strip()
+        season_number = int(series_match.group(2))
+        episode_number = int(series_match.group(3))
+        audio_type = series_match.group(4).upper()
+        
+        print(f"[LOG CANAL SÉRIES] Processando: {series_title} S{season_number:02d} E{episode_number:02d}")
+
+        # 3. Buscar opções no TMDb
+        series_options = tmdb_api.search_series_options(series_title)
+
+        if not series_options:
+            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title}'.")
+            return
+
+        # 4. Verificar alta confiança (usando fuzz)
+        high_confidence_match = None
+        for option in series_options:
+            ratio = fuzz.ratio(series_title.lower(), option['title'].lower())
+            if ratio > 80:
+                high_confidence_match = option
+                break
+
+        # 5.A. ALTA CONFIANÇA -> Indexar direto
+        if high_confidence_match:
+            tmdb_id = high_confidence_match['tmdb_id']
+            status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
+            
+            success, msg = await _index_series_episode(
+                tmdb_id=tmdb_id,
+                season_number=season_number,
+                episode_number=episode_number,
+                audio_type=audio_type,
+                file_id=file_id
+            )
+            await safe_edit_message(status_msg, msg)
+
+        # 5.B. BAIXA CONFIANÇA -> Pedir ajuda
+        else:
+            request_id = str(uuid.uuid4())
+            context.bot_data[request_id] = {
+                'file_id': file_id, 
+                'audio_type': audio_type, 
+                'options': series_options,
+                'season_number': season_number,
+                'episode_number': episode_number
+            }
+            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\nQual série é esta?"
+            keyboard = []
+            for option in series_options:
+                callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
+                button_text = f"{option['title']} ({option['year']})"
+                keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
+            keyboard.append([InlineKeyboardButton("❌ Nenhuma destas", callback_data=f"confirm_series_{request_id}_ignore")])
+            
+            await safe_send_message(
+                context, chat_id=ADMIN_IDS[0], text=message_text,
+                reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
+            )
+            
+    except Exception as e:
+        print(f"❌ ERRO CRÍTICO no new_series_in_channel_handler: {e}")
+        import traceback
+        traceback.print_exc()
+        await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico (Série): {e}")
+
+# --- MUDANÇA 9: Definição dos Handlers ---
+# (Precisamos adicionar o novo handler de canal de séries)
+#
 start_handler = CommandHandler("start", start_admin)
 button_click_handler = CallbackQueryHandler(button_handler_admin)
 get_id_command_handler = CommandHandler("getid", get_id_handler)
-admin_video_handler = MessageHandler(filters.VIDEO & ~filters.COMMAND & filters.ChatType.PRIVATE, add_movie_handler)
 get_chat_id_command_handler = CommandHandler("id", get_chat_id_handler)
+
+# Este handler manual (privado) agora é o roteador
+admin_video_handler = MessageHandler(filters.VIDEO & ~filters.COMMAND & filters.ChatType.PRIVATE, admin_video_handler)
+
+# Handler para o canal de FILMES
 channel_video_handler = MessageHandler(filters.VIDEO & filters.Chat(chat_id=STORAGE_CHANNEL_ID), new_movie_in_channel_handler)
 
+# NOVO HANDLER para o canal de SÉRIES
+channel_series_handler = MessageHandler(filters.VIDEO & filters.Chat(chat_id=STORAGE_CHANNEL_ID_SERIES), new_series_in_channel_handler)

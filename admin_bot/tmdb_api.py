@@ -1,7 +1,8 @@
 import re
+import requests
 from tmdbv3api import TMDb, Movie, Search
 from tmdbv3api.exceptions import TMDbException
-from config import TMDB_API_KEY 
+from config import TMDB_API_KEY, BASE_URL, API_KEY
 
 # Configuração da API
 tmdb = TMDb()
@@ -132,4 +133,88 @@ def search_movie_options(query: str) -> list:
     except Exception as e:
         print(f"Erro ao buscar opções no TMDb: {e}")
         return []
+    
+def search_series_options(query: str) -> list[dict]:
+    """Busca por séries no TMDb e retorna uma lista de opções formatadas."""
+    print(f"[TMDb API] Buscando séries por: '{query}'")
+    search_url = f"{BASE_URL}/search/tv"
+    params = {
+        'api_key': API_KEY,
+        'language': 'pt-BR',
+        'query': query
+    }
+    try:
+        response = requests.get(search_url, params=params)
+        response.raise_for_status()
+        data = response.json()
+        
+        options = []
+        # Pegamos apenas os 5 primeiros resultados
+        for result in data.get('results', [])[:5]:
+            year = result.get('first_air_date', '').split('-')[0] if result.get('first_air_date') else 'N/A'
+            options.append({
+                'tmdb_id': result.get('id'),
+                'title': result.get('name'),
+                'year': year,
+                'poster_url': f"https://image.tmdb.org/t/p/w500{result.get('poster_path')}" if result.get('poster_path') else None,
+                # Usado para o botão de confirmação
+                'button_text': f"{result.get('name')} ({year})"
+            })
+        return options
+    except Exception as e:
+        print(f"❌ Erro na API TMDb (search_series_options): {e}")
+        return []
+
+def get_series_details(tmdb_id: int) -> dict | None:
+    """Busca os detalhes completos de UMA série no TMDb."""
+    print(f"[TMDb API] Buscando detalhes da série ID: {tmdb_id}")
+    detail_url = f"{BASE_URL}/tv/{tmdb_id}"
+    params = {
+        'api_key': API_KEY,
+        'language': 'pt-BR'
+    }
+    try:
+        response = requests.get(detail_url, params=params)
+        response.raise_for_status()
+        result = response.json()
+        
+        # Formata os dados para salvar no nosso banco 'series'
+        return {
+            'tmdb_id': result.get('id'),
+            'title': result.get('name'),
+            'description': result.get('overview'),
+            'poster_url': f"https://image.tmdb.org/t/p/w500{result.get('poster_path')}" if result.get('poster_path') else None,
+            'year': result.get('first_air_date', '').split('-')[0] if result.get('first_air_date') else 'N/A',
+            'genre': ", ".join([g['name'] for g in result.get('genres', [])])
+        }
+    except Exception as e:
+        print(f"❌ Erro na API TMDb (get_series_details): {e}")
+        return None
+
+def get_episode_details(tmdb_id: int, season_number: int, episode_number: int) -> dict | None:
+    """Busca os detalhes de UM episódio (ex: Título)."""
+    print(f"[TMDb API] Buscando Ep: S{season_number} E{episode_number} da Série ID: {tmdb_id}")
+    detail_url = f"{BASE_URL}/tv/{tmdb_id}/season/{season_number}/episode/{episode_number}"
+    params = {
+        'api_key': API_KEY,
+        'language': 'pt-BR'
+    }
+    try:
+        response = requests.get(detail_url, params=params)
+        response.raise_for_status()
+        result = response.json()
+        
+        # Formata os dados para salvar no nosso banco 'episodes'
+        return {
+            'title': result.get('name', f'Episódio {episode_number}'),
+            'episode_number': result.get('episode_number')
+        }
+    except Exception as e:
+        # Se o episódio não existir no TMDb (ex: "Episódio 25" de um anime),
+        # apenas retornamos um título genérico.
+        print(f"⚠️ Aviso na API TMDb (get_episode_details): {e}. Usando título genérico.")
+        return {
+            'title': f'Episódio {episode_number}',
+            'episode_number': episode_number
+        }
     

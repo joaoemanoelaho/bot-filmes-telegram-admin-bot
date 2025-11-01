@@ -12,6 +12,7 @@ sys.path.insert(0, parent_dir)
 from supabase import create_client, Client
 from config import SUPABASE_URL, SUPABASE_KEY
 from datetime import datetime, timedelta # Para manipulação de datas
+import admin_bot.tmdb_api as tmdb_api
 
 # Tenta criar a conexão com o Supabase.
 try:
@@ -285,5 +286,134 @@ def filter_existing_titles(titles: list[str]) -> list[str]:
     except Exception as e:
         print(f"Erro ao filtrar títulos existentes no Supabase: {e}")
         return []
-# Por enquanto, estas são as funções que precisamos.
-# No futuro, adicionaremos aqui: add_movie, is_user_vip, etc.
+
+def get_or_create_series(tmdb_id: int) -> dict | None:
+    """
+    Verifica se a série existe no banco de dados pelo tmdb_id.
+    Se não existir, busca no TMDb e cria um novo registro.
+    Retorna os dados da série do NOSSO banco.
+    """
+    if not supabase:
+        print("Conexão com Supabase não disponível.")
+        return None
+
+    # 1. Tenta buscar a série no banco
+    response = supabase.table('series').select('*').eq('tmdb_id', tmdb_id).execute()
+    
+    if response.data:
+        print(f"[DB] Série encontrada no banco: {response.data[0]['title']}")
+        return response.data[0]
+
+    # 2. Se não encontrou, busca no TMDb
+    print(f"[DB] Série {tmdb_id} não encontrada. Buscando no TMDb...")
+    series_details = tmdb_api.get_series_details(tmdb_id)
+    
+    if not series_details:
+        print(f"❌ [DB] Falha ao buscar detalhes da série {tmdb_id} no TMDb.")
+        return None
+        
+    # 3. Salva no banco de dados
+    try:
+        insert_response = supabase.table('series').insert(series_details).execute()
+        if insert_response.data:
+            print(f"✅ [DB] Série '{series_details['title']}' adicionada ao banco.")
+            return insert_response.data[0]
+    except Exception as e:
+        print(f"❌ [DB] Erro ao inserir nova série no Supabase: {e}")
+        return None
+    
+    return None
+
+def get_or_create_season(series_id: int, season_number: int) -> dict | None:
+    """
+    Verifica se a temporada existe para uma série.
+    Se não existir, cria um novo registro.
+    Retorna os dados da temporada.
+    """
+    if not supabase: return None
+
+    # 1. Tenta buscar a temporada
+    response = supabase.table('seasons') \
+        .select('*') \
+        .eq('series_id', series_id) \
+        .eq('season_number', season_number) \
+        .execute()
+        
+    if response.data:
+        print(f"[DB] Temporada {season_number} encontrada para a série ID {series_id}.")
+        return response.data[0]
+        
+    # 2. Se não encontrou, cria
+    print(f"[DB] Criando registro da Temporada {season_number} para a série ID {series_id}.")
+    try:
+        insert_data = {
+            'series_id': series_id,
+            'season_number': season_number,
+            'name': f'Temporada {season_number}' # Nome genérico
+        }
+        insert_response = supabase.table('seasons').insert(insert_data).execute()
+        if insert_response.data:
+            return insert_response.data[0]
+    except Exception as e:
+        print(f"❌ [DB] Erro ao inserir nova temporada no Supabase: {e}")
+        return None
+
+def find_episode(season_id: int, episode_number: int) -> dict | None:
+    """Procura por um episódio específico no banco de dados."""
+    if not supabase: return None
+    try:
+        response = supabase.table('episodes') \
+            .select('*') \
+            .eq('season_id', season_id) \
+            .eq('episode_number', episode_number) \
+            .single() \
+            .execute()
+        return response.data
+    except Exception:
+        return None # Normal se não encontrar
+
+def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, episode_number: int, audio_type: str, file_id: str) -> bool:
+    """
+    Adiciona ou atualiza um episódio no banco de dados.
+    Busca o título do episódio no TMDb.
+    """
+    if not supabase: return False
+
+    # 1. Verifica se o episódio já existe
+    existing_episode = find_episode(season_id, episode_number)
+    
+    column_to_update = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+
+    try:
+        if existing_episode:
+            # 2.A. Se existe, ATUALIZA o file_id
+            print(f"[DB] Atualizando episódio S{season_number} E{episode_number} (ID: {existing_episode['episode_id']})")
+            supabase.table('episodes') \
+                .update({column_to_update: file_id}) \
+                .eq('episode_id', existing_episode['episode_id']) \
+                .execute()
+            return True
+        else:
+            # 2.B. Se não existe, busca detalhes no TMDb e CRIA
+            print(f"[DB] Adicionando novo episódio S{season_number} E{episode_number}")
+            
+            ep_details = tmdb_api.get_episode_details(tmdb_id, season_number, episode_number)
+            if not ep_details:
+                # Mesmo se falhar, continuamos com um título genérico
+                ep_details = {'title': f'Episódio {episode_number}'}
+                
+            insert_data = {
+                'season_id': season_id,
+                'episode_number': episode_number,
+                'title': ep_details['title'],
+                column_to_update: file_id
+            }
+            
+            supabase.table('episodes').insert(insert_data).execute()
+            print(f"✅ [DB] Episódio '{ep_details['title']}' S{season_number} E{episode_number} adicionado.")
+            return True
+            
+    except Exception as e:
+        print(f"❌ [DB] Erro ao salvar episódio no Supabase: {e}")
+        return False
+    
