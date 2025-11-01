@@ -381,7 +381,6 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 input_message_content=InputTextMessageContent("👍") # Ação ao clicar (não faz nada demais)
             )
         ]
-        # 'is_personal=True' melhora o cache, 'cache_time=5' diz para não guardar por muito tempo.
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
@@ -392,38 +391,46 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             bot_username = context.bot.username
             watch_url = f"https://t.me/{bot_username}?start=watch_{movie['movie_id']}"
 
-            # V--- TECLADO ATUALIZADO COM OS DOIS BOTÕES ---V
             keyboard = [[
                 InlineKeyboardButton("Assistir ⏯️", url=watch_url),
             ],
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            # ^--- FIM DA ATUALIZAÇÃO ---^
             
-            invisible_char = "\u200b"
-            card_text_content = (
-                f"[{invisible_char}]({movie['poster_url']})"
+            # V--- INÍCIO DA CORREÇÃO ---V
+            
+            # 1. Removemos o 'card_text_content' que tinha o link invisível.
+            # 2. Criamos uma legenda (caption) limpa para a foto.
+            photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
             results.append(
-                InlineQueryResultArticle(
+                # 3. Mudamos de 'InlineQueryResultArticle' para 'InlineQueryResultPhoto'
+                InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
-                    title=movie['title'],
-                    description=f"{movie['year']} - {movie['genre']}",
-                    thumbnail_url=movie.get('poster_url'),
-                    reply_markup=reply_markup,
-                    input_message_content=InputTextMessageContent(
-                        card_text_content,
-                        parse_mode="Markdown",
-                        disable_web_page_preview=False
-                    )
+                    
+                    # URL da foto principal
+                    photo_url=movie.get('poster_url'), 
+                    
+                    # URL da miniatura (pode ser a mesma)
+                    thumbnail_url=movie.get('poster_url'), 
+                    
+                    # 4. Usamos 'caption' para o texto que fica ABAIXO da imagem
+                    caption=photo_caption,
+                    parse_mode="Markdown",
+                    
+                    # 5. Adicionamos os botões
+                    reply_markup=reply_markup
+                    
+                    # Removemos 'title', 'description' e 'input_message_content'
+                    # pois eles não são necessários aqui.
                 )
             )
-
+            # ^--- FIM DA CORREÇÃO ---^
+            
     await update.inline_query.answer(results)
-
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
     if update.message:

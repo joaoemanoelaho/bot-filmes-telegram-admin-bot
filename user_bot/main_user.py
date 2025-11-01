@@ -8,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update, Bot
 from telegram.ext import Application
+from telegram.request import HTTPXRequest
 import handlers_user as handlers
 from config import BOT_TOKEN
 
@@ -38,7 +39,9 @@ async def startup():
     # ---------------------
     
     try:
-        application = Application.builder().token(BOT_TOKEN).build()
+        request = HTTPXRequest(read_timeout=20.0, connect_timeout=10.0)
+
+        application = Application.builder().token(BOT_TOKEN).request(request).build()
         
         application.add_handler(handlers.start_handler)
         application.add_handler(handlers.button_click_handler)
