@@ -20,7 +20,6 @@ API_HASH = os.getenv("API_HASH")
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID"))
 STORAGE_CHANNEL_ID_SERIES = int(os.getenv("STORAGE_CHANNEL_ID_SERIES"))
 PUSHINPAY_API_KEY = os.getenv("PUSHINPAY_API_KEY")
-TASTEDIVE_API_KEY = os.getenv("TASTEDIVE_API_KEY")
 
 M3U_FILE_PATH = os.getenv("M3U_FILE_PATH")
 DOWNLOAD_FOLDER = os.getenv("DOWNLOAD_FOLDER")
@@ -46,6 +45,4 @@ if not STORAGE_CHANNEL_ID:
     raise ValueError("❌ STORAGE_CHANNEL_ID não configurado!")
 if not PUSHINPAY_API_KEY:
     raise ValueError("❌ PUSHINPAY_API_KEY não configurado!")
-if not TASTEDIVE_API_KEY:
-    raise ValueError("❌ TASTEDIVE_API_KEY não configurado!")
 print("✅ Configurações carregadas com sucesso!")
