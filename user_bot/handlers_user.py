@@ -410,6 +410,8 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
                 # 3. Mudamos de 'InlineQueryResultArticle' para 'InlineQueryResultPhoto'
                 InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
+                    title=movie['title'],
+                    description=f"{movie['year']} - {movie['genre']}",
                     
                     # URL da foto principal
                     photo_url=movie.get('poster_url'), 
