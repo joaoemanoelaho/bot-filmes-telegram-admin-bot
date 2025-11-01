@@ -371,7 +371,7 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
     """Lida com as buscas em modo inline."""
     query_text = update.inline_query.query
 
-    # Esta parte (quando a busca está vazia) continua igual
+    # --- Lógica de Busca Vazia (Continua igual) ---
     if not query_text:
         help_result = [
             InlineQueryResultArticle(
@@ -385,44 +385,32 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
         await update.inline_query.answer(help_result, is_personal=True, cache_time=5)
         return
     
-    # --- A MUDANÇA COMEÇA AQUI ---
+    # --- A MUDANÇA ESTÁ AQUI ---
     
     # 1. Cria a lista de resultados vazia
     results = []
 
-    # V--- NOVO: ITENS ESTÁTICOS DO MENU ---V
-    # Adiciona "Artigos" fixos no topo da lista, assim como o @TuaSerieTSbot
+    # V--- A CORREÇÃO: Adiciona "Ajuda" PRIMEIRO ---V
+    # Isso força a lista vertical, como no @TuaSerieTSbot
     
-    # Artigo 1: Top Filmes
+    # Artigo "Ajuda" (baseado no TuaSerieTSbot)
     results.append(
         InlineQueryResultArticle(
-            id="static_top_filmes",
-            title="Top Filmes 🏆",
-            description="Veja os filmes mais assistidos",
-            # Ícone de Troféu
-            thumbnail_url="https://cdn-icons-png.flaticon.com/512/2617/2617743.png", 
-            # Quando clicado, envia uma mensagem
+            id="static_help",
+            title="Ajuda",
+            description="Como usar o bot de busca",
+            # Ícone de "Ajuda" (pode ser o mesmo do outro bot se achar a URL)
+            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png", 
             input_message_content=InputTextMessageContent(
-                "Para ver o ranking Top Filmes, por favor, envie o comando /start e clique em 'Top Filmes 🏆'."
+                "Para buscar, digite @MeuCinePipocaBot e o nome do filme.\n\n"
+                "Para ver o menu principal, envie /start."
             )
         )
     )
+    # (Se você também quiser o "Top Filmes", é só copiar este bloco
+    # e colar logo abaixo, mudando o 'id', 'title', etc.)
     
-    # Artigo 2: Pedir Filme
-    results.append(
-        InlineQueryResultArticle(
-            id="static_pedir",
-            title="Pedir Filme/Série 💡",
-            description="Não achou o que queria? Peça aqui!",
-            # Ícone de Lâmpada
-            thumbnail_url="https://cdn-icons-png.flaticon.com/512/189/189665.png",
-            # Quando clicado, envia uma mensagem
-            input_message_content=InputTextMessageContent(
-                "Para pedir um filme ou série, por favor, envie o comando /start e clique em 'Pedir Filme/Série 💡'."
-            )
-        )
-    )
-    # ^--- FIM DOS ITENS ESTÁTICOS ---^
+    # ^--- FIM DA CORREÇÃO ---^
 
     # 2. Agora, busca os filmes no DB e adiciona o resto dos resultados
     results_from_db = db.search_movies(query_text)
@@ -448,30 +436,21 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
 
             results.append(
-                # Usamos Photo para a saída de foto nativa
                 InlineQueryResultPhoto(
                     id=f"movie_{movie['movie_id']}",
-                    
-                    # 'title' e 'description' para a lista vertical
                     title=movie['title'],
                     description=f"{movie['year']} - {movie['genre']}",
-                    
-                    # URL da foto grande (para a saída)
                     photo_url=poster_url_grande, 
-                    # URL da miniatura PEQUENA (para a lista)
                     thumbnail_url=poster_url_pequeno, 
-                    
                     caption=photo_caption,
                     parse_mode="Markdown",
                     reply_markup=reply_markup
                 )
             )
     
-    # 3. Envia a lista MISTA (Artigos + Fotos)
-    # Não precisamos mais do "artigo hack" no final,
-    # porque já temos artigos de verdade no começo!
+    # 3. Envia a lista MISTA (Artigo de Ajuda + Fotos de Filmes)
     await update.inline_query.answer(results, cache_time=10, is_personal=True)
-    
+
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
