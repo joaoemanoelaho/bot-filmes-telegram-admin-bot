@@ -397,40 +397,46 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # V--- INÍCIO DA CORREÇÃO ---V
-            
-            # 1. Este será o texto enviado QUANDO O USUÁRIO CLICAR.
-            # Removemos o link do pôster para evitar a "citação".
-            card_text_content = (
+            # Legenda que vai ABAIXO da foto (saída)
+            photo_caption = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
-            results.append(
-                # 2. Voltamos para 'InlineQueryResultArticle'
-                InlineQueryResultArticle(
-                    id=f"movie_{movie['movie_id']}",
-                    
-                    # 3. Isso cria a LISTA VERTICAL que você quer
-                    title=movie['title'],
-                    description=f"{movie['year']} - {movie['genre']}",
-                    thumbnail_url=movie.get('poster_url'),
-                    
-                    # 4. Anexa os botões
-                    reply_markup=reply_markup,
-                    
-                    # 5. Define a MENSAGEM DE SAÍDA como o texto limpo
-                    input_message_content=InputTextMessageContent(
-                        card_text_content,
-                        parse_mode="Markdown",
-                        # Garante que NENHUMA preview de link seja gerada
-                        disable_web_page_preview=True 
-                    )
-                )
-            )
+            # V--- A CORREÇÃO DEFINITIVA ---V
+            
+            # 1. Pega a URL do pôster grande
+            poster_url_grande = movie.get('poster_url')
+            
+            # 2. Cria uma URL de miniatura PEQUENA (troca 'w500' por 'w154')
+            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w154/')
+            
             # ^--- FIM DA CORREÇÃO ---^
 
-    await update.inline_query.answer(results)
+            results.append(
+                # Usamos Photo para a saída de foto nativa
+                InlineQueryResultPhoto(
+                    id=f"movie_{movie['movie_id']}",
+                    
+                    # 'title' e 'description' para a lista vertical
+                    title=movie['title'],
+                    description=f"{movie['year']} - {movie['genre']}",
+                    
+                    # URL da foto grande (para a saída)
+                    photo_url=poster_url_grande, 
+                    
+                    # URL da miniatura PEQUENA (para a lista)
+                    thumbnail_url=poster_url_pequeno, 
+                    
+                    # Legenda e botões que aparecem DEPOIS de clicar
+                    caption=photo_caption,
+                    parse_mode="Markdown",
+                    reply_markup=reply_markup
+                )
+            )
+            
+    # cache_time=10 força o Telegram a atualizar a busca a cada 10s
+    await update.inline_query.answer(results, cache_time=10, is_personal=True)
 
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
