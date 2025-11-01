@@ -296,6 +296,7 @@ def download_movie_sync(movie_info: dict) -> str:
         command = [
             sys.executable, '-m', 'yt_dlp',
             '--output', file_path,
+            '--max-filesize', '2900M',
             '--no-playlist', 
             '--retries', '20', 
             '--fragment-retries', '20',
