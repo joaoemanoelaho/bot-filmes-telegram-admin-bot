@@ -397,45 +397,47 @@ async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Compartilhar ❤️", switch_inline_query=movie['title'])]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            photo_caption = (
+            # V--- INÍCIO DA CORREÇÃO ---V
+            
+            # 1. Este será o texto enviado QUANDO O USUÁRIO CLICAR.
+            # É SÓ TEXTO, sem link de pôster.
+            card_text_content = (
                 f"🎬 *{movie['title']}* ({movie['year']})\n"
                 f"🎭 *Gênero:* {movie['genre']}"
             )
             
-            # V--- A CORREÇÃO DEFINITIVA ---V
+            # 2. Pega a URL do pôster e troca para uma miniatura PEQUENA
+            poster_url_pequeno = movie.get('poster_url').replace('/w500/', '/w92/')
             
-            # 1. Pega a URL do pôster grande
-            poster_url_grande = movie.get('poster_url')
-            
-            # 2. Cria uma URL de miniatura PEQUENA (troca 'w500' por 'w92')
-            # w92 é o tamanho de thumbnail do TMDb
-            poster_url_pequeno = poster_url_grande.replace('/w500/', '/w92/')
-            
-            # ^--- FIM DA CORREÇÃO ---^
-
             results.append(
-                InlineQueryResultPhoto(
+                # 3. Voltamos para 'InlineQueryResultArticle' (para a LISTA VERTICAL)
+                InlineQueryResultArticle(
                     id=f"movie_{movie['movie_id']}",
                     
-                    # 'title' e 'description' para a lista vertical
+                    # 4. Isso cria a LISTA VERTICAL que você quer
                     title=movie['title'],
                     description=f"{movie['year']} - {movie['genre']}",
                     
-                    # URL da foto grande (para a saída)
-                    photo_url=poster_url_grande, 
+                    # 5. Usamos a miniatura PEQUENA (w92)
+                    thumbnail_url=poster_url_pequeno,
                     
-                    # URL da miniatura PEQUENA (para a lista)
-                    thumbnail_url=poster_url_pequeno, 
+                    # 6. Anexa os botões
+                    reply_markup=reply_markup,
                     
-                    caption=photo_caption,
-                    parse_mode="Markdown",
-                    reply_markup=reply_markup
+                    # 7. Define a MENSAGEM DE SAÍDA como o texto limpo
+                    input_message_content=InputTextMessageContent(
+                        card_text_content,
+                        parse_mode="Markdown",
+                        # Garante que NENHUMA preview de link seja gerada
+                        disable_web_page_preview=True 
+                    )
                 )
             )
-            
+            # ^--- FIM DA CORREÇÃO ---^
+
     # cache_time=10 força o Telegram a atualizar a busca a cada 10s
     await update.inline_query.answer(results, cache_time=10, is_personal=True)
-    
+
 async def watch_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Lida com o comando /watch OU é chamada pela função start."""
     if update.message:
