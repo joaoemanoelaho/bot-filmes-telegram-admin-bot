@@ -391,39 +391,44 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str, series_match: re.Match):
-    """Nova lógica para processar um upload manual de SÉRIE."""
+    """Lógica de SÉRIE (COM CORREÇÃO)"""
     status_msg = None
     try:
         file_id = update.message.video.file_id
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
         # 1. Extrair dados do Regex
-        series_title = series_match.group(1).strip() # Ex: "Bob Esponja (1999-2010)"
-        season_number = int(series_match.group(2))   # Ex: 3
-        episode_number = int(series_match.group(3))  # Ex: 16
-        audio_type = series_match.group(4).upper()   # Ex: "DUB"
+        series_title_raw = series_match.group(1).strip() # Ex: "Supergirl (2015)"
+        season_number = int(series_match.group(2))
+        episode_number = int(series_match.group(3))
+        audio_type = series_match.group(4).upper()
+        
+        # --- INÍCIO DA CORREÇÃO ---
+        # Limpa o (ANO) do título ANTES de pesquisar
+        search_query_clean = re.sub(r'\s*\(\d{4}\)\s*$', '', series_title_raw).strip()
+        print(f"[Handlers] Título da série limpo para busca: '{search_query_clean}'")
+        # --- FIM DA CORREÇÃO ---
         
         # 2. Buscar opções no TMDb
-        series_options = tmdb_api.search_series_options(series_title)
+        series_options = tmdb_api.search_series_options(search_query_clean) # Busca por "Supergirl"
 
         if not series_options:
-            await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title}'.")
+            await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{search_query_clean}'.")
             return
 
         # 3. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
-            ratio = fuzz.ratio(series_title.lower(), option['title'].lower())
-            # Damos uma margem menor para séries, pois o ano pode estar no título
+            # Compara o título limpo com o título da opção
+            ratio = fuzz.ratio(search_query_clean.lower(), option['title'].lower())
             if ratio > 80: 
                 high_confidence_match = option
                 break
 
-        # 4.A. ALTA CONFIANÇA -> Indexar direto
+        # 4.A. ALTA CONFIANÇA
         if high_confidence_match:
             tmdb_id = high_confidence_match['tmdb_id']
             await safe_edit_message(status_msg, f"✅ (Série) Correspondência: '{high_confidence_match['title']}'. Salvando...")
-            
             success, msg = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
@@ -433,20 +438,19 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             )
             await safe_edit_message(status_msg, msg)
 
-        # 4.B. BAIXA CONFIANÇA -> Pedir ajuda
+        # 4.B. BAIXA CONFIANÇA
         else:
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
                 'audio_type': audio_type, 
                 'options': series_options,
-                'season_number': season_number, # <-- DADO EXTRA
-                'episode_number': episode_number # <-- DADO EXTRA
+                'season_number': season_number,
+                'episode_number': episode_number
             }
             message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{file_name}`\n\nQual série é esta?"
             keyboard = []
             for option in series_options:
-                # --- MUDANÇA 5: Novo prefixo de botão ---
                 callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
@@ -458,7 +462,6 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         import traceback
         traceback.print_exc()
         await safe_edit_message(status_msg, f"❌ Erro crítico (Série): {e}")
-
 
 async def get_chat_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Retorna o ID do chat atual (sem mudança)."""
@@ -559,18 +562,14 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
     Bot indexador que lê caption ou nome do arquivo do NOVO canal de SÉRIES.
     """
     post = update.channel_post or update.message
-    # Escuta o NOVO ID de canal
     if not post or post.chat.id != STORAGE_CHANNEL_ID_SERIES or not post.video:
         return
-
     status_msg = None
     try:
         file_name = post.caption or post.video.file_name
         if not file_name: return
         
         file_id = post.video.file_id
-        
-        # Limpa o nome do arquivo (ex: ".mp4")
         clean_file_name, _ = os.path.splitext(file_name)
         
         # 1. Tenta aplicar o Regex de Séries
@@ -581,33 +580,36 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             return
             
         # 2. Extrair dados do Regex
-        series_title = series_match.group(1).strip()
+        series_title_raw = series_match.group(1).strip() # Ex: "Supergirl (2015)"
         season_number = int(series_match.group(2))
         episode_number = int(series_match.group(3))
         audio_type = series_match.group(4).upper()
         
-        print(f"[LOG CANAL SÉRIES] Processando: {series_title} S{season_number:02d} E{episode_number:02d}")
-
+        # --- INÍCIO DA CORREÇÃO ---
+        # Limpa o (ANO) do título ANTES de pesquisar
+        search_query_clean = re.sub(r'\s*\(\d{4}\)\s*$', '', series_title_raw).strip()
+        print(f"[LOG CANAL SÉRIES] Processando: {search_query_clean} S{season_number:02d} E{episode_number:02d}")
+        # --- FIM DA CORREÇÃO ---
+        
         # 3. Buscar opções no TMDb
-        series_options = tmdb_api.search_series_options(series_title)
+        series_options = tmdb_api.search_series_options(search_query_clean) # Busca por "Supergirl"
 
         if not series_options:
-            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title}'.")
+            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{search_query_clean}'.")
             return
 
         # 4. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
-            ratio = fuzz.ratio(series_title.lower(), option['title'].lower())
+            ratio = fuzz.ratio(search_query_clean.lower(), option['title'].lower())
             if ratio > 80:
                 high_confidence_match = option
                 break
 
-        # 5.A. ALTA CONFIANÇA -> Indexar direto
+        # 5.A. ALTA CONFIANÇA
         if high_confidence_match:
             tmdb_id = high_confidence_match['tmdb_id']
             status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
-            
             success, msg = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
@@ -617,7 +619,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             )
             await safe_edit_message(status_msg, msg)
 
-        # 5.B. BAIXA CONFIANÇA -> Pedir ajuda
+        # 5.B. BAIXA CONFIANÇA
         else:
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
@@ -627,25 +629,23 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 'season_number': season_number,
                 'episode_number': episode_number
             }
-            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\nQual série é esta?"
+            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\RQual série é esta?"
             keyboard = []
             for option in series_options:
                 callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
             keyboard.append([InlineKeyboardButton("❌ Nenhuma destas", callback_data=f"confirm_series_{request_id}_ignore")])
-            
             await safe_send_message(
                 context, chat_id=ADMIN_IDS[0], text=message_text,
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
             )
-            
     except Exception as e:
         print(f"❌ ERRO CRÍTICO no new_series_in_channel_handler: {e}")
         import traceback
         traceback.print_exc()
         await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico (Série): {e}")
-
+        
 # --- MUDANÇA 9: Definição dos Handlers ---
 # (Precisamos adicionar o novo handler de canal de séries)
 #
