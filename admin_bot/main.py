@@ -8,13 +8,12 @@ from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
 # --- MUDANÇA 1: IMPORTAR O CachePersistence E TypeHandler ---
-from telegram.ext import Application, CachePersistence, TypeHandler, ContextTypes
+from telegram.ext import Application, PicklePersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
-from datetime import timedelta  # --- MUDANÇA 2: IMPORTAR timedelta ---
 
 # --- DEBUG PRINT ---
-print("[DEBUG-ADMIN] Versão do código: 1.4 (com Debug Handler)")
+print("[DEBUG-ADMIN] Versão do código: 1.5 (com PicklePersistence)")
 # ---------------------
 
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -53,8 +52,8 @@ async def startup():
     try:
         # --- HABILITAR A PERSISTÊNCIA EM MEMÓRIA RAM ---
         # Isso não cria arquivos, mas liga o context.bot_data
-        persistence = CachePersistence(timedelta(days=1))  
-        print("[DEBUG-ADMIN] CachePersistence criado para persistência em RAM.")
+        persistence = PicklePersistence(filepath="admin_bot_persistence.pkl")
+        print("[DEBUG-ADMIN] PicklePersistence criado para persistência em disco.")
         
         application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
         
