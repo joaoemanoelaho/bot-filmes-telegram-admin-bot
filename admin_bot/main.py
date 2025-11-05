@@ -7,10 +7,11 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
-# --- MUDANÇA 1: IMPORTAR O DictPersistence E TypeHandler ---
-from telegram.ext import Application, DictPersistence, TypeHandler, ContextTypes
+# --- MUDANÇA 1: IMPORTAR O CachePersistence E TypeHandler ---
+from telegram.ext import Application, CachePersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
+from datetime import timedelta  # --- MUDANÇA 2: IMPORTAR timedelta ---
 
 # --- DEBUG PRINT ---
 print("[DEBUG-ADMIN] Versão do código: 1.4 (com Debug Handler)")
@@ -52,7 +53,8 @@ async def startup():
     try:
         # --- HABILITAR A PERSISTÊNCIA EM MEMÓRIA RAM ---
         # Isso não cria arquivos, mas liga o context.bot_data
-        persistence = DictPersistence()
+        persistence = CachePersistence(timedelta(days=1))  
+        print("[DEBUG-ADMIN] CachePersistence criado para persistência em RAM.")
         
         application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
         
