@@ -23,7 +23,7 @@ sys.path.insert(0, parent_dir)
 # Este Regex é o cérebro para identificar séries.
 # G1: Título, G2: (Ano) - opcional, G3: Temporada, G4: Episódio, G5: Áudio
 SERIES_REGEX = re.compile(
-    r"^(.*?) (?: \((\d{4})\) )?S(\d{1,2}) E(\d{1,3}) \[([A-Z0-9]+)\]$",
+    r"^(.*?) (?: \((\d{4})\) )?S(\d{1,2})\s?E(\d{1,3}) \[([A-Z0-9]+)\]$",
     re.IGNORECASE
 )
 
@@ -398,19 +398,22 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         file_id = update.message.video.file_id
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
-        # --- INÍCIO DA ATUALIZAÇÃO v4.1 ---
-        # 1. Extrair dados do Regex (ATUALIZADO PARA 5 GRUPOS)
+        #
+        # --- MUDANÇA 3: LÓGICA DE EXTRAÇÃO CORRIGIDA ---
+        # (Usando os 5 grupos do Regex Universal)
+        #
         series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
         series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
         season_number = int(series_match.group(3)) # G3: Temporada
         episode_number = int(series_match.group(4)) # G4: Episódio
         audio_type = series_match.group(5).upper() # G5: Áudio
         
-        print(f"[Handlers] Título da série limpo para busca: '{series_title_clean}' (Ano: {series_year})")
+        print(f"[Handlers] Título: '{series_title_clean}', Ano: {series_year}, S{season_number} E{episode_number}")
         
         # 2. Buscar opções no TMDb (AGORA PASSANDO O ANO)
         series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
-        # --- FIM DA ATUALIZAÇÃO v4.1 ---
+        # --- FIM DA MUDANÇA ---
+        #
 
         if not series_options:
             await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
@@ -580,19 +583,23 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ Falha (Série): O nome '{clean_file_name}' não bate com o padrão 'Nome SXX EXX [AUDIO]'.")
             return
             
-        # --- INÍCIO DA ATUALIZAÇÃO v4.1 ---
-        # 2. Extrair dados do Regex (ATUALIZADO PARA 5 GRUPOS)
+        #
+        # --- MUDANÇA 5: LÓGICA DE EXTRAÇÃO CORRIGIDA ---
+        # (Usando os 5 grupos do Regex Universal)
+        #
         series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
         series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
         season_number = int(series_match.group(3)) # G3: Temporada
         episode_number = int(series_match.group(4)) # G4: Episódio
         audio_type = series_match.group(5).upper() # G5: Áudio
         
+        # Este é o log que vai aparecer correto agora
         print(f"[LOG CANAL SÉRIES] Processando: {series_title_clean} (Ano: {series_year}) S{season_number:02d} E{episode_number:02d}")
         
         # 3. Buscar opções no TMDb (AGORA PASSANDO O ANO)
         series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
-        # --- FIM DA ATUALIZAÇÃO v4.1 ---
+        # --- FIM DA MUDANÇA ---
+        #
 
         if not series_options:
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
