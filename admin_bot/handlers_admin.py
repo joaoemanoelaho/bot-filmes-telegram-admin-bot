@@ -23,7 +23,7 @@ sys.path.insert(0, parent_dir)
 # Este Regex é o cérebro para identificar séries.
 # G1: Título, G2: (Ano) - opcional, G3: Temporada, G4: Episódio, G5: Áudio
 SERIES_REGEX = re.compile(
-    r"^(.*?) ?(?: \((\d{4})\) )? S(\d{1,2})\s?E(\d{1,3}) \[([A-Z0-9]+)\]$",
+    r"^(.*?) ?(?: \((\d{4})\))? S(\d{1,2})\s?E(\d{1,3}) \[([A-Z0-9]+)\]$",
     re.IGNORECASE
 )
 
