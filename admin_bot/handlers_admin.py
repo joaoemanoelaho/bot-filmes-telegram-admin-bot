@@ -1,6 +1,6 @@
 #
 # Arquivo que contém as respostas e lógicas para os comandos.
-# VERSÃO 4.0 - ADICIONADO SUPORTE A SÉRIES
+# VERSÃO 4.1 - CORREÇÃO DO PARSER DE SÉRIES (ANO)
 #
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from telegram.ext import CommandHandler, ContextTypes, CallbackQueryHandler, MessageHandler, filters
@@ -21,11 +21,12 @@ sys.path.insert(0, parent_dir)
 
 # --- MUDANÇA 2: O REGEX DE SÉRIES ---
 # Este Regex é o cérebro para identificar séries.
-# (Grupo 1: Título da Série) S(Grupo 2: N° da Temporada) E(Grupo 3: N° do Episódio) [(Grupo 4: Áudio)]
+# G1: Título, G2: (Ano) - opcional, G3: Temporada, G4: Episódio, G5: Áudio
 SERIES_REGEX = re.compile(
-    r"^(.*?) S(\d{1,2}) E(\d{1,3}) \[(DUB|LEG)\]$", 
+    r"^(.*?) (?: \((\d{4})\) )?S(\d{1,2}) E(\d{1,3}) \[([A-Z0-9]+)\]$",
     re.IGNORECASE
 )
+
 
 # =================================================================
 # === FUNÇÕES DE SEGURANÇA (COM RETENTATIVAS) ===
@@ -310,10 +311,10 @@ async def admin_video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if series_match:
         print(f"[Handlers] Vídeo (Manual) detectado como SÉRIE: {clean_file_name}")
-        await _process_series_upload(update, context, file_name, series_match)
+        await _process_series_upload(update, context, clean_file_name, series_match)
     else:
         print(f"[Handlers] Vídeo (Manual) detectado como FILME: {clean_file_name}")
-        await _process_movie_upload(update, context, file_name)
+        await _process_movie_upload(update, context, clean_file_name)
 
 
 async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str):
@@ -391,36 +392,35 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str, series_match: re.Match):
-    """Lógica de SÉRIE (COM CORREÇÃO)"""
+    """Lógica de SÉRIE (COM ATUALIZAÇÃO DO PLANO)"""
     status_msg = None
     try:
         file_id = update.message.video.file_id
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
-        # 1. Extrair dados do Regex
-        series_title_raw = series_match.group(1).strip() # Ex: "Supergirl (2015)"
-        season_number = int(series_match.group(2))
-        episode_number = int(series_match.group(3))
-        audio_type = series_match.group(4).upper()
+        # --- INÍCIO DA ATUALIZAÇÃO v4.1 ---
+        # 1. Extrair dados do Regex (ATUALIZADO PARA 5 GRUPOS)
+        series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
+        series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
+        season_number = int(series_match.group(3)) # G3: Temporada
+        episode_number = int(series_match.group(4)) # G4: Episódio
+        audio_type = series_match.group(5).upper() # G5: Áudio
         
-        # --- INÍCIO DA CORREÇÃO ---
-        # Limpa o (ANO) do título ANTES de pesquisar
-        search_query_clean = re.sub(r'\s*\(\d{4}\)\s*$', '', series_title_raw).strip()
-        print(f"[Handlers] Título da série limpo para busca: '{search_query_clean}'")
-        # --- FIM DA CORREÇÃO ---
+        print(f"[Handlers] Título da série limpo para busca: '{series_title_clean}' (Ano: {series_year})")
         
-        # 2. Buscar opções no TMDb
-        series_options = tmdb_api.search_series_options(search_query_clean) # Busca por "Supergirl"
+        # 2. Buscar opções no TMDb (AGORA PASSANDO O ANO)
+        series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
+        # --- FIM DA ATUALIZAÇÃO v4.1 ---
 
         if not series_options:
-            await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{search_query_clean}'.")
+            await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
         # 3. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
             # Compara o título limpo com o título da opção
-            ratio = fuzz.ratio(search_query_clean.lower(), option['title'].lower())
+            ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
             if ratio > 80: 
                 high_confidence_match = option
                 break
@@ -560,6 +560,7 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
 async def new_series_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Bot indexador que lê caption ou nome do arquivo do NOVO canal de SÉRIES.
+    (VERSÃO ATUALIZADA v4.1)
     """
     post = update.channel_post or update.message
     if not post or post.chat.id != STORAGE_CHANNEL_ID_SERIES or not post.video:
@@ -579,29 +580,28 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ Falha (Série): O nome '{clean_file_name}' não bate com o padrão 'Nome SXX EXX [AUDIO]'.")
             return
             
-        # 2. Extrair dados do Regex
-        series_title_raw = series_match.group(1).strip() # Ex: "Supergirl (2015)"
-        season_number = int(series_match.group(2))
-        episode_number = int(series_match.group(3))
-        audio_type = series_match.group(4).upper()
+        # --- INÍCIO DA ATUALIZAÇÃO v4.1 ---
+        # 2. Extrair dados do Regex (ATUALIZADO PARA 5 GRUPOS)
+        series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
+        series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
+        season_number = int(series_match.group(3)) # G3: Temporada
+        episode_number = int(series_match.group(4)) # G4: Episódio
+        audio_type = series_match.group(5).upper() # G5: Áudio
         
-        # --- INÍCIO DA CORREÇÃO ---
-        # Limpa o (ANO) do título ANTES de pesquisar
-        search_query_clean = re.sub(r'\s*\(\d{4}\)\s*$', '', series_title_raw).strip()
-        print(f"[LOG CANAL SÉRIES] Processando: {search_query_clean} S{season_number:02d} E{episode_number:02d}")
-        # --- FIM DA CORREÇÃO ---
+        print(f"[LOG CANAL SÉRIES] Processando: {series_title_clean} (Ano: {series_year}) S{season_number:02d} E{episode_number:02d}")
         
-        # 3. Buscar opções no TMDb
-        series_options = tmdb_api.search_series_options(search_query_clean) # Busca por "Supergirl"
+        # 3. Buscar opções no TMDb (AGORA PASSANDO O ANO)
+        series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
+        # --- FIM DA ATUALIZAÇÃO v4.1 ---
 
         if not series_options:
-            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{search_query_clean}'.")
+            await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
         # 4. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
-            ratio = fuzz.ratio(search_query_clean.lower(), option['title'].lower())
+            ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
             if ratio > 80:
                 high_confidence_match = option
                 break
@@ -629,7 +629,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 'season_number': season_number,
                 'episode_number': episode_number
             }
-            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\RQual série é esta?"
+            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\nQual série é esta?"
             keyboard = []
             for option in series_options:
                 callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"

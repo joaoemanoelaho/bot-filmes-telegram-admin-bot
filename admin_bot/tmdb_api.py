@@ -112,7 +112,7 @@ def search_movie_options(query: str) -> list:
                 # V--- CORREÇÃO NO DICT DE RETORNO ---V
                 options.append({
                     'tmdb_id': details.id,
-                    'title': main_title_for_check,    # <--- Sempre será o 'title_pt'
+                    'title': main_title_for_check,      # <--- Sempre será o 'title_pt'
                     'button_text': final_button_text, # <--- Texto "inteligente" para o botão
                     'year': year_value,
                     'genre': details.genres[0]['name'] if details.genres else 'N/A',
@@ -133,37 +133,54 @@ def search_movie_options(query: str) -> list:
     except Exception as e:
         print(f"Erro ao buscar opções no TMDb: {e}")
         return []
-    
-def search_series_options(query: str) -> list[dict]:
-    """Busca por séries no TMDb e retorna uma lista de opções formatadas."""
-    print(f"[TMDb API] Buscando séries por: '{query}'")
+
+#
+# --- INÍCIO DA ATUALIZAÇÃO ---
+#
+def search_series_options(query: str, year: str = None) -> list[dict]:
+    """
+    Busca por séries no TMDb e retorna uma lista de opções formatadas.
+    (VERSÃO ATUALIZADA: Aceita ano e retorna 10 resultados)
+    """
+    print(f"[TMDb API] Buscando séries por: '{query}' (Ano: {year})")
     search_url = f"{BASE_URL}/search/tv"
     params = {
         'api_key': API_KEY,
         'language': 'pt-BR',
         'query': query
     }
+    
+    # Adiciona o filtro de ano se ele foi fornecido
+    if year:
+        try:
+            params['first_air_date_year'] = int(year)
+        except ValueError:
+            print(f"⚠️ Aviso: Ano inválido '{year}' recebido, ignorando filtro de ano.")
+
     try:
         response = requests.get(search_url, params=params)
         response.raise_for_status()
         data = response.json()
         
         options = []
-        # Pegamos apenas os 5 primeiros resultados
-        for result in data.get('results', [])[:5]:
-            year = result.get('first_air_date', '').split('-')[0] if result.get('first_air_date') else 'N/A'
+        # Pegamos os 10 primeiros resultados (limite aumentado)
+        for result in data.get('results', [])[:10]:
+            year_result = result.get('first_air_date', '').split('-')[0] if result.get('first_air_date') else 'N/A'
             options.append({
                 'tmdb_id': result.get('id'),
                 'title': result.get('name'),
-                'year': year,
+                'year': year_result,
                 'poster_url': f"https://image.tmdb.org/t/p/w500{result.get('poster_path')}" if result.get('poster_path') else None,
                 # Usado para o botão de confirmação
-                'button_text': f"{result.get('name')} ({year})"
+                'button_text': f"{result.get('name')} ({year_result})"
             })
         return options
     except Exception as e:
         print(f"❌ Erro na API TMDb (search_series_options): {e}")
         return []
+#
+# --- FIM DA ATUALIZAÇÃO ---
+#
 
 def get_series_details(tmdb_id: int) -> dict | None:
     """Busca os detalhes completos de UMA série no TMDb."""
