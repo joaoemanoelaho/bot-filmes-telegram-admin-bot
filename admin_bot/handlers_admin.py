@@ -575,6 +575,12 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         
         file_id = post.video.file_id
         clean_file_name, _ = os.path.splitext(file_name)
+
+        clean_file_name = clean_file_name.strip()
+        clean_file_name = clean_file_name.replace("…", "...")
+        clean_file_name = re.sub(r"\s+", " ", clean_file_name)
+
+        print(f"[DEBUG-CAPTION-RAW] {repr(clean_file_name)}")
         
         # 1. Tenta aplicar o Regex de Séries
         series_match = SERIES_REGEX.search(clean_file_name)
