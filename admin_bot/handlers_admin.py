@@ -580,6 +580,9 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         clean_file_name = clean_file_name.replace("…", "...")
         clean_file_name = re.sub(r"\s+", " ", clean_file_name)
 
+        clean_file_name = re.sub(r'[★☆✦✧✨⭐❖❥•■□◆◇●○♦♥♡♠♣☀☁☂☃☄☾☽♬♪♫♩]', '', clean_file_name)
+        clean_file_name = re.sub(r'^[^\w(]+', '', clean_file_name).strip()
+
         print(f"[DEBUG-CAPTION-RAW] {repr(clean_file_name)}")
         
         # 1. Tenta aplicar o Regex de Séries
