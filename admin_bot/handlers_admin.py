@@ -570,7 +570,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         return
     status_msg = None
     try:
-        file_name = post.video.file_name or post.caption
+        file_name = post.caption or post.video.file_name
         if not file_name: return
         
         file_id = post.video.file_id
