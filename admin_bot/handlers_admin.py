@@ -93,7 +93,8 @@ async def _index_series_episode(
     season_number: int, 
     episode_number: int, 
     audio_type: str, 
-    file_id: str
+    file_id: str,
+    unique_id: str  # <-- ADICIONADO
 ) -> (bool, str):
     """
     Função "Worker" que faz todo o trabalho de indexar um episódio.
@@ -101,12 +102,12 @@ async def _index_series_episode(
     Retorna (True/False, "Mensagem de Resultado")
     """
     try:
-        # 1. Busca/Cria a Série
+        # 1. Busca/Cria a Série (sem mudança)
         series_data = db.get_or_create_series(tmdb_id)
         if not series_data:
             return False, "❌ Erro: Não foi possível buscar/criar a série no DB."
         
-        # 2. Busca/Cria a Temporada
+        # 2. Busca/Cria a Temporada (sem mudança)
         season_data = db.get_or_create_season(
             series_id=series_data['id'], 
             season_number=season_number
@@ -115,13 +116,14 @@ async def _index_series_episode(
             return False, "❌ Erro: Não foi possível buscar/criar a temporada no DB."
         
         # 3. Adiciona/Atualiza o Episódio
-        success = db.add_or_update_episode(
+        success = db.add_or_update_episode( # <-- CHAMADA ATUALIZADA
             season_id=season_data['id'],
-            tmdb_id=tmdb_id, # Passa o tmdb_id para a busca de nome de ep
+            tmdb_id=tmdb_id, 
             season_number=season_number,
             episode_number=episode_number,
             audio_type=audio_type,
-            file_id=file_id
+            file_id=file_id,
+            unique_id=unique_id # <-- PASSANDO O UNIQUE_ID
         )
         
         if success:
@@ -151,7 +153,7 @@ async def start_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Processa cliques de confirmação.
-    AGORA SUPORTA 'confirm_movie_' E 'confirm_series_'.
+    AGORA SUPORTA 'confirm_movie_' E 'confirm_series_' (e unique_id).
     """
     query = update.callback_query
     if not query: return
@@ -196,15 +198,29 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         await safe_edit_message(query.message, f"⏳ Processando FILME: '{chosen_movie_details['title']}'...")
         
         try:
+            # PUXA O UNIQUE_ID DO CONTEXTO
+            file_id = request_data['file_id']
+            unique_id = request_data['unique_id'] # <-- NOVO
+            audio_type = request_data['audio_type']
+            
             existing_movie = db.find_movie_by_title_and_year(title=chosen_movie_details['title'], year=chosen_movie_details['year'])
             if existing_movie:
-                success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=request_data['file_id'], audio_type=request_data['audio_type'])
+                # ATUALIZA COM UNIQUE_ID
+                success = db.update_movie_file_id(
+                    movie_id=existing_movie['movie_id'], 
+                    file_id=file_id, 
+                    unique_id=unique_id, # <-- NOVO
+                    audio_type=audio_type
+                )
                 msg = f"🔄 Filme '{chosen_movie_details['title']}' atualizado!"
             else:
-                if request_data['audio_type'].upper() == 'DUB':
-                    chosen_movie_details['dubbed_file_id'] = request_data['file_id']
+                # ADICIONA COM UNIQUE_ID
+                if audio_type.upper() == 'DUB':
+                    chosen_movie_details['dubbed_file_id'] = file_id
+                    chosen_movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
                 else:
-                    chosen_movie_details['subtitled_file_id'] = request_data['file_id']
+                    chosen_movie_details['subtitled_file_id'] = file_id
+                    chosen_movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
                 
                 chosen_movie_details.pop('button_text', None)
                 success = db.add_movie(chosen_movie_details)
@@ -217,7 +233,7 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             print(f"❌ ERRO CRÍTICO no Banco de Dados (button_handler/movie): {e}")
             await safe_edit_message(query.message, f"❌ ERRO CRÍTICO (Filme): {e}")
         
-        return # Fim da lógica de filmes
+        return 
 
     # --- ROTEADOR DE SÉRIES ---
     elif callback_data.startswith("confirm_series_"):
@@ -242,7 +258,6 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         except ValueError:
             return
             
-        # Pega o 'tmdb_id' da opção que o admin clicou
         chosen_series_details = next((opt for opt in request_data['options'] if opt.get('tmdb_id') == tmdb_id_to_confirm), None)
         
         if not chosen_series_details:
@@ -252,21 +267,21 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             
         await safe_edit_message(query.message, f"⏳ Processando SÉRIE: '{chosen_series_details['title']}'...")
         
-        # Chama o worker
+        # Chama o worker (passando o unique_id do request_data)
         success, msg = await _index_series_episode(
             tmdb_id=tmdb_id_to_confirm,
             season_number=request_data['season_number'],
             episode_number=request_data['episode_number'],
             audio_type=request_data['audio_type'],
-            file_id=request_data['file_id']
+            file_id=request_data['file_id'],
+            unique_id=request_data['unique_id'] # <-- NOVO
         )
         
         await safe_edit_message(query.message, msg)
         if request_id in context.bot_data: del context.bot_data[request_id]
-        return # Fim da lógica de séries
+        return 
         
     else:
-        # Ação de botão não reconhecida
         print(f"[Handlers] Callback ignorado: {callback_data}")
 
 
@@ -318,13 +333,14 @@ async def admin_video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str):
-    """Lógica que o admin_video_handler usava (anteriormente add_movie_handler)."""
+    """Lógica que o admin_video_handler usava (agora com unique_id)."""
     status_msg = None
     try:
+        # CAPTURA OS DOIS IDs
         file_id = update.message.video.file_id
+        unique_id = update.message.video.file_unique_id # <-- NOVO
+        
         status_msg = await update.message.reply_text(f"⏳ Processando FILME '{file_name}'...")
-
-        # (A lógica de verificação de tamanho de arquivo foi movida para os uploaders)
         
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
         if not audio_type_match:
@@ -359,11 +375,21 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
             existing_movie = db.find_movie_by_title_and_year(title=movie_details['title'], year=movie_details['year'])
             
             if existing_movie:
-                success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=file_id, audio_type=audio_type)
+                success = db.update_movie_file_id( # <-- CHAMADA ATUALIZADA
+                    movie_id=existing_movie['movie_id'], 
+                    file_id=file_id, 
+                    unique_id=unique_id, # <-- NOVO
+                    audio_type=audio_type
+                )
                 msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
-                if audio_type == 'DUB': movie_details['dubbed_file_id'] = file_id
-                else: movie_details['subtitled_file_id'] = file_id
+                if audio_type == 'DUB': 
+                    movie_details['dubbed_file_id'] = file_id
+                    movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
+                else: 
+                    movie_details['subtitled_file_id'] = file_id
+                    movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
+                
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
                 msg = f"✅ Filme '{movie_details['title']}' adicionado!"
@@ -372,12 +398,14 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
         else:
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
-                'file_id': file_id, 'audio_type': audio_type, 'options': movie_options
+                'file_id': file_id, 
+                'unique_id': unique_id, # <-- NOVO
+                'audio_type': audio_type, 
+                'options': movie_options
             }
             message_text = f"❓ **Ajuda (Filme)**\n\nArquivo: `{search_query_clean}`\n\nQual o correto?"
             keyboard = []
             for option in movie_options:
-                # --- MUDANÇA 4: Prefixo do botão atualizado ---
                 callback_data_str = f"confirm_movie_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
@@ -392,60 +420,56 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
 
 
 async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str, series_match: re.Match):
-    """Lógica de SÉRIE (COM ATUALIZAÇÃO DO PLANO)"""
+    """Lógica de SÉRIE (agora com unique_id)"""
     status_msg = None
     try:
+        # CAPTURA OS DOIS IDs
         file_id = update.message.video.file_id
+        unique_id = update.message.video.file_unique_id # <-- NOVO
+        
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
-        #
-        # --- MUDANÇA 3: LÓGICA DE EXTRAÇÃO CORRIGIDA ---
-        # (Usando os 5 grupos do Regex Universal)
-        #
-        series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
-        series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
-        season_number = int(series_match.group(3)) # G3: Temporada
-        episode_number = int(series_match.group(4)) # G4: Episódio
-        audio_type = series_match.group(5).upper() # G5: Áudio
+        series_title_clean = series_match.group(1).strip() 
+        series_year = series_match.group(2).strip() if series_match.group(2) else None
+        season_number = int(series_match.group(3)) 
+        episode_number = int(series_match.group(4))
+        audio_type = series_match.group(5).upper() 
         
         print(f"[Handlers] Título: '{series_title_clean}', Ano: {series_year}, S{season_number} E{episode_number}")
         
-        # 2. Buscar opções no TMDb (AGORA PASSANDO O ANO)
         series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
-        # --- FIM DA MUDANÇA ---
-        #
 
         if not series_options:
             await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
-        # 3. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
-            # Compara o título limpo com o título da opção
             ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
             if ratio > 80: 
                 high_confidence_match = option
                 break
 
-        # 4.A. ALTA CONFIANÇA
         if high_confidence_match:
             tmdb_id = high_confidence_match['tmdb_id']
             await safe_edit_message(status_msg, f"✅ (Série) Correspondência: '{high_confidence_match['title']}'. Salvando...")
+            
+            # CHAMA O WORKER ATUALIZADO
             success, msg = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
                 episode_number=episode_number,
                 audio_type=audio_type,
-                file_id=file_id
+                file_id=file_id,
+                unique_id=unique_id # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
 
-        # 4.B. BAIXA CONFIANÇA
         else:
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
+                'unique_id': unique_id, # <-- NOVO
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,
@@ -481,6 +505,7 @@ async def get_chat_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Bot indexador que lê caption ou nome do arquivo do canal de FILMES.
+    (agora com unique_id)
     """
     post = update.channel_post or update.message
     if not post or post.chat.id != STORAGE_CHANNEL_ID or not post.video:
@@ -490,7 +515,10 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
     try:
         file_name = post.video.file_name or post.caption
         if not file_name: return
+        
+        # CAPTURA OS DOIS IDs
         file_id = post.video.file_id
+        unique_id = post.video.file_unique_id # <-- NOVO
         
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
         if not audio_type_match: return
@@ -521,11 +549,21 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             existing_movie = db.find_movie_by_title_and_year(title=movie_details['title'], year=movie_details['year'])
             
             if existing_movie:
-                success = db.update_movie_file_id(movie_id=existing_movie['movie_id'], file_id=file_id, audio_type=audio_type)
+                success = db.update_movie_file_id( # <-- CHAMADA ATUALIZADA
+                    movie_id=existing_movie['movie_id'], 
+                    file_id=file_id, 
+                    unique_id=unique_id, # <-- NOVO
+                    audio_type=audio_type
+                )
                 msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
-                if audio_type == 'DUB': movie_details['dubbed_file_id'] = file_id
-                else: movie_details['subtitled_file_id'] = file_id
+                if audio_type == 'DUB': 
+                    movie_details['dubbed_file_id'] = file_id
+                    movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
+                else: 
+                    movie_details['subtitled_file_id'] = file_id
+                    movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
+                    
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
                 msg = f"✅ Filme '{movie_details['title']}' adicionado!"
@@ -534,12 +572,14 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             # Baixa confiança, pede ajuda
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
-                'file_id': file_id, 'audio_type': audio_type, 'options': movie_options
+                'file_id': file_id, 
+                'unique_id': unique_id, # <-- NOVO
+                'audio_type': audio_type, 
+                'options': movie_options
             }
             message_text = f"❓ **Ajuda (Filme)**\n\nArquivo: `{search_query_clean}`\n\nQual o correto?"
             keyboard = []
             for option in movie_options:
-                # --- MUDANÇA 7: Prefixo do botão atualizado ---
                 callback_data_str = f"confirm_movie_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
@@ -563,7 +603,7 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
 async def new_series_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Bot indexador que lê caption ou nome do arquivo do NOVO canal de SÉRIES.
-    (VERSÃO ATUALIZADA v4.1)
+    (agora com unique_id)
     """
     post = update.channel_post or update.message
     if not post or post.chat.id != STORAGE_CHANNEL_ID_SERIES or not post.video:
@@ -573,48 +613,41 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         file_name = post.caption or post.video.file_name
         if not file_name: return
         
+        # CAPTURA OS DOIS IDs
         file_id = post.video.file_id
+        unique_id = post.video.file_unique_id # <-- NOVO
+        
         clean_file_name, _ = os.path.splitext(file_name)
 
+        # ... (sua lógica de limpeza de nome de arquivo permanece a mesma) ...
         clean_file_name = clean_file_name.replace("_", " ").strip()
         clean_file_name = clean_file_name.replace("…", "...")
         clean_file_name = re.sub(r"\s+", " ", clean_file_name)
-
         clean_file_name = re.sub(r'[★☆✦✧✨⭐❖❥•■□◆◇●○♦♥♡♠♣☀☁☂☃☄☾☽♬♪♫♩]', '', clean_file_name)
         clean_file_name = re.sub(r'^[^\w(]+', '', clean_file_name).strip()
-
+        
         print(f"[DEBUG-CAPTION-RAW] {repr(clean_file_name)}")
         
-        # 1. Tenta aplicar o Regex de Séries
         series_match = SERIES_REGEX.search(clean_file_name)
         
         if not series_match:
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ Falha (Série): O nome '{clean_file_name}' não bate com o padrão 'Nome SXX EXX [AUDIO]'.")
             return
             
-        #
-        # --- MUDANÇA 5: LÓGICA DE EXTRAÇÃO CORRIGIDA ---
-        # (Usando os 5 grupos do Regex Universal)
-        #
-        series_title_clean = series_match.group(1).strip() # G1: Título (já limpo)
-        series_year = series_match.group(2).strip() if series_match.group(2) else None # G2: Ano (opcional)
-        season_number = int(series_match.group(3)) # G3: Temporada
-        episode_number = int(series_match.group(4)) # G4: Episódio
-        audio_type = series_match.group(5).upper() # G5: Áudio
+        series_title_clean = series_match.group(1).strip() 
+        series_year = series_match.group(2).strip() if series_match.group(2) else None
+        season_number = int(series_match.group(3))
+        episode_number = int(series_match.group(4))
+        audio_type = series_match.group(5).upper() 
         
-        # Este é o log que vai aparecer correto agora
         print(f"[LOG CANAL SÉRIES] Processando: {series_title_clean} (Ano: {series_year}) S{season_number:02d} E{episode_number:02d}")
         
-        # 3. Buscar opções no TMDb (AGORA PASSANDO O ANO)
         series_options = tmdb_api.search_series_options(series_title_clean, year=series_year)
-        # --- FIM DA MUDANÇA ---
-        #
 
         if not series_options:
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
-        # 4. Verificar alta confiança (usando fuzz)
         high_confidence_match = None
         for option in series_options:
             ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
@@ -622,24 +655,26 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 high_confidence_match = option
                 break
 
-        # 5.A. ALTA CONFIANÇA
         if high_confidence_match:
             tmdb_id = high_confidence_match['tmdb_id']
             status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
+            
+            # CHAMA O WORKER ATUALIZADO
             success, msg = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
                 episode_number=episode_number,
                 audio_type=audio_type,
-                file_id=file_id
+                file_id=file_id,
+                unique_id=unique_id # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
 
-        # 5.B. BAIXA CONFIANÇA
         else:
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
+                'unique_id': unique_id, # <-- NOVO
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,

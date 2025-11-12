@@ -252,19 +252,27 @@ def find_movie_by_title_and_year(title: str, year: int) -> dict | None:
         # A exceção acontece se o 'single()' não encontrar nada, o que é normal.
         return None
 
-def update_movie_file_id(movie_id: int, file_id: str, audio_type: str):
-    """Atualiza o file_id de um filme existente (dublado ou legendado)."""
+def update_movie_file_id(movie_id: int, file_id: str, unique_id: str, audio_type: str):
+    """Atualiza o file_id E o unique_id de um filme existente."""
     if not supabase:
         return False
     
-    column_to_update = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    # Define os nomes das colunas com base no tipo de áudio
+    file_id_column = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    unique_id_column = 'dubbed_unique_id' if audio_type.upper() == 'DUB' else 'subtitled_unique_id'
     
     try:
-        supabase.table('movies').update({column_to_update: file_id}).eq('movie_id', movie_id).execute()
-        print(f"Atualizado {column_to_update} para o filme ID: {movie_id}")
+        # Cria o dicionário de dados para atualizar
+        data_to_update = {
+            file_id_column: file_id,
+            unique_id_column: unique_id
+        }
+        
+        supabase.table('movies').update(data_to_update).eq('movie_id', movie_id).execute()
+        print(f"Atualizado {file_id_column} e {unique_id_column} para o filme ID: {movie_id}")
         return True
     except Exception as e:
-        print(f"Erro ao atualizar file_id: {e}")
+        print(f"Erro ao atualizar file_id e unique_id: {e}")
         return False
     
 def filter_existing_titles(titles: list[str]) -> list[str]:
@@ -372,24 +380,32 @@ def find_episode(season_id: int, episode_number: int) -> dict | None:
     except Exception:
         return None # Normal se não encontrar
 
-def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, episode_number: int, audio_type: str, file_id: str) -> bool:
+def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, episode_number: int, audio_type: str, file_id: str, unique_id: str) -> bool:
     """
     Adiciona ou atualiza um episódio no banco de dados.
     Busca o título do episódio no TMDb.
+    AGORA SALVA O unique_id.
     """
     if not supabase: return False
 
     # 1. Verifica se o episódio já existe
     existing_episode = find_episode(season_id, episode_number)
     
-    column_to_update = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    file_id_column = 'dubbed_file_id' if audio_type.upper() == 'DUB' else 'subtitled_file_id'
+    unique_id_column = 'dubbed_unique_id' if audio_type.upper() == 'DUB' else 'subtitled_unique_id'
 
     try:
         if existing_episode:
-            # 2.A. Se existe, ATUALIZA o file_id
+            # 2.A. Se existe, ATUALIZA o file_id e unique_id
             print(f"[DB] Atualizando episódio S{season_number} E{episode_number} (ID: {existing_episode['episode_id']})")
+            
+            data_to_update = {
+                file_id_column: file_id,
+                unique_id_column: unique_id
+            }
+            
             supabase.table('episodes') \
-                .update({column_to_update: file_id}) \
+                .update(data_to_update) \
                 .eq('episode_id', existing_episode['episode_id']) \
                 .execute()
             return True
@@ -399,14 +415,14 @@ def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, epis
             
             ep_details = tmdb_api.get_episode_details(tmdb_id, season_number, episode_number)
             if not ep_details:
-                # Mesmo se falhar, continuamos com um título genérico
                 ep_details = {'title': f'Episódio {episode_number}'}
                 
             insert_data = {
                 'season_id': season_id,
                 'episode_number': episode_number,
                 'title': ep_details['title'],
-                column_to_update: file_id
+                file_id_column: file_id,
+                unique_id_column: unique_id
             }
             
             supabase.table('episodes').insert(insert_data).execute()
