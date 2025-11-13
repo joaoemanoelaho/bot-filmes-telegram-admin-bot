@@ -94,7 +94,8 @@ async def _index_series_episode(
     episode_number: int, 
     audio_type: str, 
     file_id: str,
-    unique_id: str  # <-- ADICIONADO
+    unique_id: str,
+    msg_id: int   # <-- ADICIONADO
 ) -> (bool, str):
     """
     Função "Worker" que faz todo o trabalho de indexar um episódio.
@@ -123,7 +124,8 @@ async def _index_series_episode(
             episode_number=episode_number,
             audio_type=audio_type,
             file_id=file_id,
-            unique_id=unique_id # <-- PASSANDO O UNIQUE_ID
+            unique_id=unique_id,
+            msg_id=msg_id # <-- PASSANDO O UNIQUE_ID
         )
         
         if success:
@@ -200,7 +202,8 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             # PUXA O UNIQUE_ID DO CONTEXTO
             file_id = request_data['file_id']
-            unique_id = request_data['unique_id'] # <-- NOVO
+            unique_id = request_data['unique_id']
+            msg_id = request_data['msg_id'] # <-- NOVO
             audio_type = request_data['audio_type']
             
             existing_movie = db.find_movie_by_title_and_year(title=chosen_movie_details['title'], year=chosen_movie_details['year'])
@@ -209,7 +212,8 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
                 success = db.update_movie_file_id(
                     movie_id=existing_movie['movie_id'], 
                     file_id=file_id, 
-                    unique_id=unique_id, # <-- NOVO
+                    unique_id=unique_id,
+                    msg_id=msg_id, # <-- NOVO
                     audio_type=audio_type
                 )
                 msg = f"🔄 Filme '{chosen_movie_details['title']}' atualizado!"
@@ -218,9 +222,11 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
                 if audio_type.upper() == 'DUB':
                     chosen_movie_details['dubbed_file_id'] = file_id
                     chosen_movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
+                    chosen_movie_details['dubbed_msg_id'] = msg_id # <-- NOVO
                 else:
                     chosen_movie_details['subtitled_file_id'] = file_id
-                    chosen_movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
+                    chosen_movie_details['subtitled_unique_id'] = unique_id
+                    chosen_movie_details['subtitled_msg_id'] = msg_id # <-- NOVO
                 
                 chosen_movie_details.pop('button_text', None)
                 success = db.add_movie(chosen_movie_details)
@@ -274,7 +280,8 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
             episode_number=request_data['episode_number'],
             audio_type=request_data['audio_type'],
             file_id=request_data['file_id'],
-            unique_id=request_data['unique_id'] # <-- NOVO
+            unique_id=request_data['unique_id'],
+            msg_id=request_data['msg_id'] # <-- NOVO
         )
         
         await safe_edit_message(query.message, msg)
@@ -338,7 +345,8 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         # CAPTURA OS DOIS IDs
         file_id = update.message.video.file_id
-        unique_id = update.message.video.file_unique_id # <-- NOVO
+        unique_id = update.message.video.file_unique_id
+        msg_id = update.message.message_id # <-- NOVO
         
         status_msg = await update.message.reply_text(f"⏳ Processando FILME '{file_name}'...")
         
@@ -378,17 +386,20 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
                 success = db.update_movie_file_id( # <-- CHAMADA ATUALIZADA
                     movie_id=existing_movie['movie_id'], 
                     file_id=file_id, 
-                    unique_id=unique_id, # <-- NOVO
+                    unique_id=unique_id,
+                    msg_id=msg_id, # <-- NOVO
                     audio_type=audio_type
                 )
                 msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
                 if audio_type == 'DUB': 
                     movie_details['dubbed_file_id'] = file_id
-                    movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
+                    movie_details['dubbed_unique_id'] = unique_id
+                    movie_details['dubbed_msg_id'] = msg_id # <-- NOVO
                 else: 
                     movie_details['subtitled_file_id'] = file_id
-                    movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
+                    movie_details['subtitled_unique_id'] = unique_id
+                    movie_details['subtitled_msg_id'] = msg_id # <-- NOVO
                 
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
@@ -399,7 +410,8 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
-                'unique_id': unique_id, # <-- NOVO
+                'unique_id': unique_id,
+                'msg_id': msg_id, # <-- NOVO
                 'audio_type': audio_type, 
                 'options': movie_options
             }
@@ -425,7 +437,8 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
     try:
         # CAPTURA OS DOIS IDs
         file_id = update.message.video.file_id
-        unique_id = update.message.video.file_unique_id # <-- NOVO
+        unique_id = update.message.video.file_unique_id
+        msg_id = update.message.message_id # <-- NOVO
         
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
@@ -461,7 +474,8 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                 episode_number=episode_number,
                 audio_type=audio_type,
                 file_id=file_id,
-                unique_id=unique_id # <-- NOVO
+                unique_id=unique_id,
+                msg_id=msg_id # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
 
@@ -469,7 +483,8 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
-                'unique_id': unique_id, # <-- NOVO
+                'unique_id': unique_id,
+                'msg_id': msg_id, # <-- NOVO
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,
@@ -518,7 +533,8 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
         
         # CAPTURA OS DOIS IDs
         file_id = post.video.file_id
-        unique_id = post.video.file_unique_id # <-- NOVO
+        unique_id = post.video.file_unique_id
+        msg_id = post.message_id # <-- NOVO
         
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
         if not audio_type_match: return
@@ -552,17 +568,20 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
                 success = db.update_movie_file_id( # <-- CHAMADA ATUALIZADA
                     movie_id=existing_movie['movie_id'], 
                     file_id=file_id, 
-                    unique_id=unique_id, # <-- NOVO
+                    unique_id=unique_id,
+                    msg_id=msg_id, # <-- NOVO
                     audio_type=audio_type
                 )
                 msg = f"🔄 Filme '{movie_details['title']}' atualizado!"
             else:
                 if audio_type == 'DUB': 
                     movie_details['dubbed_file_id'] = file_id
-                    movie_details['dubbed_unique_id'] = unique_id # <-- NOVO
+                    movie_details['dubbed_unique_id'] = unique_id
+                    movie_details['dubbed_msg_id'] = msg_id # <-- NOVO
                 else: 
                     movie_details['subtitled_file_id'] = file_id
-                    movie_details['subtitled_unique_id'] = unique_id # <-- NOVO
+                    movie_details['subtitled_unique_id'] = unique_id
+                    movie_details['subtitled_msg_id'] = msg_id # <-- NOVO
                     
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
@@ -573,7 +592,8 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
-                'unique_id': unique_id, # <-- NOVO
+                'unique_id': unique_id,
+                'msg_id': msg_id,  # <-- NOVO
                 'audio_type': audio_type, 
                 'options': movie_options
             }
@@ -615,7 +635,8 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         
         # CAPTURA OS DOIS IDs
         file_id = post.video.file_id
-        unique_id = post.video.file_unique_id # <-- NOVO
+        unique_id = post.video.file_unique_id
+        msg_id = post.message_id  # <-- NOVO
         
         clean_file_name, _ = os.path.splitext(file_name)
 
@@ -666,7 +687,8 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 episode_number=episode_number,
                 audio_type=audio_type,
                 file_id=file_id,
-                unique_id=unique_id # <-- NOVO
+                unique_id=unique_id,
+                msg_id=msg_id  # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
 
@@ -674,7 +696,8 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
-                'unique_id': unique_id, # <-- NOVO
+                'unique_id': unique_id, 
+                'msg_id': msg_id,  # <-- NOVO
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,
