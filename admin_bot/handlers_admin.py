@@ -326,7 +326,11 @@ async def admin_video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
         
     # Limpa o nome do arquivo (ex: ".mp4")
-    clean_file_name, _ = os.path.splitext(file_name)
+    # Remove apenas extensões de vídeo comuns do final, se existirem
+    if file_name.lower().endswith(('.mp4', '.mkv', '.avi')):
+        clean_file_name = file_name.rsplit('.', 1)[0]
+    else:
+        clean_file_name = file_name
     
     # --- ROTEADOR LÓGICO ---
     series_match = SERIES_REGEX.search(clean_file_name)
@@ -638,7 +642,11 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         unique_id = post.video.file_unique_id
         msg_id = post.message_id  # <-- NOVO
         
-        clean_file_name, _ = os.path.splitext(file_name)
+        # Remove apenas extensões de vídeo comuns do final, se existirem
+        if file_name.lower().endswith(('.mp4', '.mkv', '.avi')):
+            clean_file_name = file_name.rsplit('.', 1)[0]
+        else:
+            clean_file_name = file_name
 
         # ... (sua lógica de limpeza de nome de arquivo permanece a mesma) ...
         clean_file_name = clean_file_name.replace("_", " ").strip()
