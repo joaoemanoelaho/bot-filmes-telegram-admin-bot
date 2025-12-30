@@ -727,6 +727,39 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         import traceback
         traceback.print_exc()
         await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico (Série): {e}")
+
+# =================================================================
+# === ROTEADOR DE DEBUG (A SOLUÇÃO) ===
+# =================================================================
+
+async def channel_router(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Recebe TODOS os vídeos de canais/grupos e imprime o ID para debug.
+    """
+    # Garante que pegamos a mensagem certa (seja post de canal ou msg de grupo)
+    post = update.channel_post or update.message
+    if not post: return
+
+    # Dados REAIS que chegaram do Telegram
+    real_chat_id = post.chat.id
+    chat_title = post.chat.title or "Sem Título"
+    
+    print(f"\n[ROUTER] 📨 Vídeo recebido em: '{chat_title}' | ID Real: {real_chat_id}")
+    print(f"[ROUTER] ⚙️ Configurados -> Filmes: {STORAGE_CHANNEL_ID} | Séries: {STORAGE_CHANNEL_ID_SERIES}")
+
+    # Comparação (Forçando int para garantir)
+    if int(real_chat_id) == int(STORAGE_CHANNEL_ID):
+        print("[ROUTER] ✅ Match! Enviando para handler de FILMES...")
+        await new_movie_in_channel_handler(update, context)
+        return
+
+    elif int(real_chat_id) == int(STORAGE_CHANNEL_ID_SERIES):
+        print("[ROUTER] ✅ Match! Enviando para handler de SÉRIES...")
+        await new_series_in_channel_handler(update, context)
+        return
+
+    else:
+        print(f"[ROUTER] ❌ IGNORADO. O ID {real_chat_id} não bate com nenhum dos dois.")
         
 # --- MUDANÇA 9: Definição dos Handlers ---
 # (Precisamos adicionar o novo handler de canal de séries)
@@ -739,8 +772,11 @@ get_chat_id_command_handler = CommandHandler("id", get_chat_id_handler)
 # Este handler manual (privado) agora é o roteador
 admin_video_handler = MessageHandler(filters.VIDEO & ~filters.COMMAND & filters.ChatType.PRIVATE, admin_video_handler)
 
-# Handler para o canal de FILMES
-channel_video_handler = MessageHandler(filters.VIDEO & filters.Chat(chat_id=STORAGE_CHANNEL_ID), new_movie_in_channel_handler)
+channel_router_handler = MessageHandler(
+    filters.VIDEO & (filters.ChatType.CHANNEL | filters.ChatType.SUPERGROUP | filters.ChatType.GROUPS), 
+    channel_router
+)
 
-# NOVO HANDLER para o canal de SÉRIES
-channel_series_handler = MessageHandler(filters.VIDEO & filters.Chat(chat_id=STORAGE_CHANNEL_ID_SERIES), new_series_in_channel_handler)
+# Apontamos as variáveis antigas para o novo roteador para não quebrar o main.py
+channel_video_handler = channel_router_handler
+channel_series_handler = channel_router_handler
