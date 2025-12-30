@@ -780,3 +780,4 @@ channel_router_handler = MessageHandler(
 # Apontamos as variáveis antigas para o novo roteador para não quebrar o main.py
 channel_video_handler = channel_router_handler
 channel_series_handler = channel_router_handler
+
