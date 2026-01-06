@@ -440,3 +440,47 @@ def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, epis
         print(f"❌ [DB] Erro ao salvar episódio no Supabase: {e}")
         return False
     
+# ==============================================================================
+# 🕵️ RADAR DE PEDIDOS (VERSÃO SÍNCRONA PARA ADMIN)
+# ==============================================================================
+def verificar_pedidos_atendidos(titulo_adicionado: str) -> list[int]:
+    """
+    1. Procura se existem pedidos pendentes com nome similar ao que foi adicionado.
+    2. Se achar, deleta o pedido do banco.
+    3. Retorna uma lista de user_ids para o bot notificar.
+    """
+    if not supabase: return []
+    
+    users_to_notify = []
+    ids_para_remover = []
+    
+    try:
+        # 1. Pega todos os pedidos pendentes
+        response = supabase.table('requests').select('*').eq('status', 'pending').execute()
+        
+        if not response.data: return []
+
+        # 2. Filtro Inteligente (Limpeza básica)
+        # Ex: "Voce (2024)" vira "voce"
+        titulo_novo_limpo = titulo_adicionado.lower().replace(".", " ").split("(")[0].strip()
+        
+        for req in response.data:
+            titulo_pedido = req['requested_title'].lower().replace(".", " ").strip()
+            
+            # Verifica se um está contido no outro (Fuzzy Match simples)
+            if titulo_novo_limpo in titulo_pedido or titulo_pedido in titulo_novo_limpo:
+                users_to_notify.append(req['user_id'])
+                ids_para_remover.append(req['request_id'])
+
+        # 3. Remove os pedidos atendidos do banco (Para não notificar 2x)
+        if ids_para_remover:
+            supabase.table('requests').delete().in_('request_id', ids_para_remover).execute()
+            print(f"✅ [Radar] Pedidos atendidos e removidos: {len(ids_para_remover)}")
+
+        # Remove duplicados e retorna lista de IDs
+        return list(set(users_to_notify))
+
+    except Exception as e:
+        print(f"⚠️ Erro no Radar de Pedidos: {e}")
+        return []
+    

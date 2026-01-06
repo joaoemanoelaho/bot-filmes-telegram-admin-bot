@@ -35,6 +35,28 @@ SERIES_REGEX = re.compile(
 # 'safe_answer_query' permanecem exatamente iguais. 
 # Elas são perfeitas.)
 
+async def notificar_usuarios_radar(context: ContextTypes.DEFAULT_TYPE, users_ids: list, titulo: str):
+    """Envia a mensagem para os usuários que pediram."""
+    if not users_ids: return
+
+    print(f"📢 Notificando {len(users_ids)} usuários sobre '{titulo}'...")
+    
+    for user_id in users_ids:
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    f"🎉 **Seu pedido foi atendido!**\n\n"
+                    f"🎬 **{titulo}**\n"
+                    f"Acabou de ser adicionado ao nosso catálogo.\n"
+                    f"Use a busca no bot para assistir! 🍿"
+                ),
+                parse_mode="Markdown"
+            )
+            await asyncio.sleep(0.5) # Evita flood no Telegram
+        except Exception as e:
+            print(f"⚠️ Não consegui avisar o user {user_id} (Bloqueou o bot?): {e}")
+
 async def safe_edit_message(message, new_text, **kwargs):
     """Tenta editar uma mensagem, com 3 retentativas."""
     if not message: return
@@ -96,7 +118,7 @@ async def _index_series_episode(
     file_id: str,
     unique_id: str,
     msg_id: int   # <-- ADICIONADO
-) -> (bool, str):
+) -> (bool, str, list):
     """
     Função "Worker" que faz todo o trabalho de indexar um episódio.
     Busca/cria a série, a temporada e o episódio.
@@ -127,10 +149,15 @@ async def _index_series_episode(
             unique_id=unique_id,
             msg_id=msg_id # <-- PASSANDO O UNIQUE_ID
         )
+
+        users_to_alert = []
+        if success:
+            # Verifica pelo NOME DA SÉRIE, não do episódio
+            users_to_alert = db.verificar_pedidos_atendidos(series_data['title'])
         
         if success:
             msg = f"✅ Episódio '{series_data['title']} S{season_number:02d} E{episode_number:02d}' indexado!"
-            return True, msg
+            return True, msg, users_to_alert
         else:
             return False, "❌ Erro desconhecido ao salvar o episódio."
             
@@ -231,6 +258,10 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
                 chosen_movie_details.pop('button_text', None)
                 success = db.add_movie(chosen_movie_details)
                 msg = f"✅ Filme '{chosen_movie_details['title']}' adicionado!"
+
+            if success:
+                users = db.verificar_pedidos_atendidos(chosen_movie_details['title'])
+                await notificar_usuarios_radar(context, users, chosen_movie_details['title'])
             
             await safe_edit_message(query.message, msg)
             if request_id in context.bot_data: del context.bot_data[request_id]
@@ -274,7 +305,7 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         await safe_edit_message(query.message, f"⏳ Processando SÉRIE: '{chosen_series_details['title']}'...")
         
         # Chama o worker (passando o unique_id do request_data)
-        success, msg = await _index_series_episode(
+        success, msg, users_alert = await _index_series_episode(
             tmdb_id=tmdb_id_to_confirm,
             season_number=request_data['season_number'],
             episode_number=request_data['episode_number'],
@@ -285,6 +316,9 @@ async def button_handler_admin(update: Update, context: ContextTypes.DEFAULT_TYP
         )
         
         await safe_edit_message(query.message, msg)
+
+        if users_alert:
+                await notificar_usuarios_radar(context, users_alert, chosen_series_details['title'])
         if request_id in context.bot_data: del context.bot_data[request_id]
         return 
         
@@ -408,6 +442,10 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
                 msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+
+                if success:
+                    users = db.verificar_pedidos_atendidos(movie_details['title'])
+                    await notificar_usuarios_radar(context, users, movie_details['title'])
             await safe_edit_message(status_msg, msg)
 
         else:
@@ -472,7 +510,7 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             await safe_edit_message(status_msg, f"✅ (Série) Correspondência: '{high_confidence_match['title']}'. Salvando...")
             
             # CHAMA O WORKER ATUALIZADO
-            success, msg = await _index_series_episode(
+            success, msg, users_alert = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
                 episode_number=episode_number,
@@ -482,6 +520,10 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                 msg_id=msg_id # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
+
+            # Notifica
+            if users_alert:
+                await notificar_usuarios_radar(context, users_alert, series_title_clean)
 
         else:
             request_id = str(uuid.uuid4())
@@ -590,6 +632,10 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
                 msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+
+                if success:
+                    users = db.verificar_pedidos_atendidos(movie_details['title'])
+                    await notificar_usuarios_radar(context, users, movie_details['title'])
             await safe_edit_message(status_msg, msg)
         else:
             # Baixa confiança, pede ajuda
@@ -689,7 +735,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
             
             # CHAMA O WORKER ATUALIZADO
-            success, msg = await _index_series_episode(
+            success, msg, users_alert = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
                 episode_number=episode_number,
@@ -699,6 +745,10 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 msg_id=msg_id  # <-- NOVO
             )
             await safe_edit_message(status_msg, msg)
+
+            # Notifica
+            if users_alert:
+                await notificar_usuarios_radar(context, users_alert, series_title_clean)
 
         else:
             request_id = str(uuid.uuid4())
