@@ -471,15 +471,16 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
         traceback.print_exc()
         await safe_edit_message(status_msg, f"❌ Erro crítico (Filme): {e}")
 
-
+# ==============================================================================
+# NOVA LÓGICA DE BUSCA INTELIGENTE (DUPLO IDIOMA + FILTRO DE CONFIANÇA)
+# ==============================================================================
 async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, file_name: str, series_match: re.Match):
-    """Lógica de SÉRIE (agora com unique_id)"""
+    """Lógica de SÉRIE Manual (Privado) - Com Busca Dupla"""
     status_msg = None
     try:
-        # CAPTURA OS DOIS IDs
         file_id = update.message.video.file_id
         unique_id = update.message.video.file_unique_id
-        msg_id = update.message.message_id # <-- NOVO
+        msg_id = update.message.message_id
         
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
@@ -497,18 +498,33 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             await safe_edit_message(status_msg, f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
+        # --- NOVA LÓGICA DE MATCH ---
         high_confidence_match = None
-        for option in series_options:
-            ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
-            if ratio > 90: 
-                high_confidence_match = option
-                break
+        best_ratio = 0
 
-        if high_confidence_match:
-            tmdb_id = high_confidence_match['tmdb_id']
-            await safe_edit_message(status_msg, f"✅ (Série) Correspondência: '{high_confidence_match['title']}'. Salvando...")
+        for option in series_options:
+            # Pega título em PT e Original (Inglês)
+            titulo_pt = option.get('title', '')
+            titulo_original = option.get('original_name', '') or option.get('original_title', '')
             
-            # CHAMA O WORKER ATUALIZADO
+            # Compara o seu arquivo com AMBOS
+            ratio_pt = fuzz.ratio(series_title_clean.lower(), titulo_pt.lower())
+            ratio_en = fuzz.ratio(series_title_clean.lower(), titulo_original.lower())
+            
+            # Pega a melhor nota entre os dois idiomas
+            current_max = max(ratio_pt, ratio_en)
+            
+            # Se achou um match melhor que o anterior, guarda ele
+            if current_max > best_ratio:
+                best_ratio = current_max
+                high_confidence_match = option
+
+        # DECISÃO: Só salva automático se a confiança for >= 90%
+        # Isso barra o "Mindscape" (87%) mas aprova "Criminal Minds" (100%)
+        if high_confidence_match and best_ratio >= 90:
+            tmdb_id = high_confidence_match['tmdb_id']
+            await safe_edit_message(status_msg, f"✅ (Série) Encontrada: '{high_confidence_match['title']}' ({best_ratio}%). Salvando...")
+            
             success, msg, users_alert = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
@@ -516,38 +532,40 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                 audio_type=audio_type,
                 file_id=file_id,
                 unique_id=unique_id,
-                msg_id=msg_id # <-- NOVO
+                msg_id=msg_id
             )
             await safe_edit_message(status_msg, msg)
 
-            # Notifica
             if users_alert:
                 await notificar_usuarios_radar(context, users_alert, series_title_clean)
 
         else:
+            # CAIU NA ZONA DE DÚVIDA (Match fraco ou nenhum match)
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
                 'unique_id': unique_id,
-                'msg_id': msg_id, # <-- NOVO
+                'msg_id': msg_id,
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,
                 'episode_number': episode_number
             }
-            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{file_name}`\n\nQual série é esta?"
+            
+            match_info = f" (Melhor chute: {best_ratio}%)" if high_confidence_match else ""
+            message_text = f"❓ **Dúvida (Série)**{match_info}\n\nArquivo: `{file_name}`\n\nO robô não teve certeza absoluta. Qual é a correta?"
+            
             keyboard = []
             for option in series_options:
                 callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
             keyboard.append([InlineKeyboardButton("❌ Nenhuma destas", callback_data=f"confirm_series_{request_id}_ignore")])
+            
             await safe_edit_message(status_msg, text=message_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
             
     except Exception as e:
         print(f"❌ ERRO CRÍTICO no _process_series_upload: {e}")
-        import traceback
-        traceback.print_exc()
         await safe_edit_message(status_msg, f"❌ Erro crítico (Série): {e}")
 
 async def get_chat_id_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -670,37 +688,29 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
 # --- MUDANÇA 8: O NOVO HANDLER DE CANAL DE SÉRIES ---
 #
 async def new_series_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """
-    Bot indexador que lê caption ou nome do arquivo do NOVO canal de SÉRIES.
-    (agora com unique_id)
-    """
+    """Bot indexador do CANAL DE SÉRIES - Com Busca Dupla"""
     post = update.channel_post or update.message
     if not post or post.chat.id != STORAGE_CHANNEL_ID_SERIES or not post.video:
         return
-    status_msg = None
+    
     try:
         file_name = post.caption or post.video.file_name
         if not file_name: return
         
-        # CAPTURA OS DOIS IDs
         file_id = post.video.file_id
         unique_id = post.video.file_unique_id
-        msg_id = post.message_id  # <-- NOVO
+        msg_id = post.message_id
         
-        # Remove apenas extensões de vídeo comuns do final, se existirem
         if file_name.lower().endswith(('.mp4', '.mkv', '.avi')):
             clean_file_name = file_name.rsplit('.', 1)[0]
         else:
             clean_file_name = file_name
 
-        # ... (sua lógica de limpeza de nome de arquivo permanece a mesma) ...
         clean_file_name = clean_file_name.replace("_", " ").strip()
         clean_file_name = clean_file_name.replace("…", "...")
         clean_file_name = re.sub(r"\s+", " ", clean_file_name)
         clean_file_name = re.sub(r'[★☆✦✧✨⭐❖❥•■□◆◇●○♦♥♡♠♣☀☁☂☃☄☾☽♬♪♫♩]', '', clean_file_name)
         clean_file_name = re.sub(r'^[^\w(]+', '', clean_file_name).strip()
-        
-        print(f"[DEBUG-CAPTION-RAW] {repr(clean_file_name)}")
         
         series_match = SERIES_REGEX.search(clean_file_name)
         
@@ -722,18 +732,28 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
             await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Série) Não encontrei resultados no TMDb para '{series_title_clean}'.")
             return
 
+        # --- NOVA LÓGICA DE MATCH (IGUAL AO MANUAL) ---
         high_confidence_match = None
-        for option in series_options:
-            ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
-            if ratio > 90:
-                high_confidence_match = option
-                break
+        best_ratio = 0
 
-        if high_confidence_match:
+        for option in series_options:
+            titulo_pt = option.get('title', '')
+            titulo_original = option.get('original_name', '') or option.get('original_title', '')
+            
+            ratio_pt = fuzz.ratio(series_title_clean.lower(), titulo_pt.lower())
+            ratio_en = fuzz.ratio(series_title_clean.lower(), titulo_original.lower())
+            
+            current_max = max(ratio_pt, ratio_en)
+            
+            if current_max > best_ratio:
+                best_ratio = current_max
+                high_confidence_match = option
+
+        # DECISÃO: Confiança >= 90%
+        if high_confidence_match and best_ratio >= 90:
             tmdb_id = high_confidence_match['tmdb_id']
             status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
             
-            # CHAMA O WORKER ATUALIZADO
             success, msg, users_alert = await _index_series_episode(
                 tmdb_id=tmdb_id,
                 season_number=season_number,
@@ -741,40 +761,43 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 audio_type=audio_type,
                 file_id=file_id,
                 unique_id=unique_id,
-                msg_id=msg_id  # <-- NOVO
+                msg_id=msg_id
             )
             await safe_edit_message(status_msg, msg)
 
-            # Notifica
             if users_alert:
                 await notificar_usuarios_radar(context, users_alert, series_title_clean)
 
         else:
+            # ZONA DE DÚVIDA -> PERGUNTA NO PRIVADO DO ADMIN
             request_id = str(uuid.uuid4())
             context.bot_data[request_id] = {
                 'file_id': file_id, 
                 'unique_id': unique_id, 
-                'msg_id': msg_id,  # <-- NOVO
+                'msg_id': msg_id,
                 'audio_type': audio_type, 
                 'options': series_options,
                 'season_number': season_number,
                 'episode_number': episode_number
             }
-            message_text = f"❓ **Ajuda (Série)**\n\nArquivo: `{clean_file_name}`\n\nQual série é esta?"
+            
+            match_info = f" (Melhor chute: {best_ratio}%)" if high_confidence_match else ""
+            message_text = f"❓ **Ajuda (Série)**{match_info}\n\nArquivo: `{clean_file_name}`\n\nQual série é esta?"
+            
             keyboard = []
             for option in series_options:
                 callback_data_str = f"confirm_series_{request_id}_{option['tmdb_id']}"
                 button_text = f"{option['title']} ({option['year']})"
                 keyboard.append([InlineKeyboardButton(button_text, callback_data=callback_data_str)])
             keyboard.append([InlineKeyboardButton("❌ Nenhuma destas", callback_data=f"confirm_series_{request_id}_ignore")])
+            
             await safe_send_message(
                 context, chat_id=ADMIN_IDS[0], text=message_text,
                 reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown"
             )
+
     except Exception as e:
         print(f"❌ ERRO CRÍTICO no new_series_in_channel_handler: {e}")
-        import traceback
-        traceback.print_exc()
         await safe_send_message(context, ADMIN_IDS[0], f"❌ Erro crítico (Série): {e}")
         
 # --- MUDANÇA 9: Definição dos Handlers ---
