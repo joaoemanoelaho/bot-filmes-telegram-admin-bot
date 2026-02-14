@@ -324,6 +324,25 @@ def get_or_create_series(tmdb_id: int) -> dict | None:
     if not series_details:
         print(f"❌ [DB] Falha ao buscar detalhes da série {tmdb_id} no TMDb.")
         return None
+    
+    raw_date = series_details.get('first_air_date') or series_details.get('release_date', '')
+    
+    # Pega apenas o ano (YYYY)
+    ano_str = str(raw_date).split('-')[0]
+
+    # Se não for numérico (ex: "N/A", "", "None"), define como None (Null no banco)
+    if not ano_str.isdigit():
+        series_details['first_air_date'] = None # Ou series_details['year'] dependendo do seu esquema
+        # Se seu banco usa uma coluna 'year', garanta que ela também receba None ou o int
+        if 'year' in series_details:
+             series_details['year'] = None
+    else:
+        # Se for número, converte para int
+        if 'year' in series_details:
+             series_details['year'] = int(ano_str)
+        # Opcional: Se 'first_air_date' for DATE no banco, deixe a string completa YYYY-MM-DD
+        # Se for INTEGER (apenas ano), use int(ano_str)
+    # -------------------------------------
         
     # 3. Salva no banco de dados
     try:

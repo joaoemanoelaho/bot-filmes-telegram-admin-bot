@@ -117,29 +117,29 @@ async def _index_series_episode(
     audio_type: str, 
     file_id: str,
     unique_id: str,
-    msg_id: int   # <-- ADICIONADO
+    msg_id: int
 ) -> (bool, str, list):
     """
-    Função "Worker" que faz todo o trabalho de indexar um episódio.
-    Busca/cria a série, a temporada e o episódio.
-    Retorna (True/False, "Mensagem de Resultado")
+    Função Worker.
+    CORREÇÃO: Agora SEMPRE retorna 3 valores (bool, str, list),
+    mesmo em caso de erro. Isso evita o crash "not enough values to unpack".
     """
     try:
-        # 1. Busca/Cria a Série (sem mudança)
+        # 1. Busca/Cria a Série
         series_data = db.get_or_create_series(tmdb_id)
         if not series_data:
-            return False, "❌ Erro: Não foi possível buscar/criar a série no DB."
+            return False, "❌ Erro: Não foi possível buscar/criar a série no DB.", []
         
-        # 2. Busca/Cria a Temporada (sem mudança)
+        # 2. Busca/Cria a Temporada
         season_data = db.get_or_create_season(
             series_id=series_data['id'], 
             season_number=season_number
         )
         if not season_data:
-            return False, "❌ Erro: Não foi possível buscar/criar a temporada no DB."
+            return False, "❌ Erro: Não foi possível buscar/criar a temporada no DB.", []
         
         # 3. Adiciona/Atualiza o Episódio
-        success = db.add_or_update_episode( # <-- CHAMADA ATUALIZADA
+        success = db.add_or_update_episode(
             season_id=season_data['id'],
             tmdb_id=tmdb_id, 
             season_number=season_number,
@@ -147,25 +147,24 @@ async def _index_series_episode(
             audio_type=audio_type,
             file_id=file_id,
             unique_id=unique_id,
-            msg_id=msg_id # <-- PASSANDO O UNIQUE_ID
+            msg_id=msg_id
         )
 
         users_to_alert = []
         if success:
-            # Verifica pelo NOME DA SÉRIE, não do episódio
+            # Verifica pelo NOME DA SÉRIE
             users_to_alert = db.verificar_pedidos_atendidos(series_data['title'])
         
         if success:
             msg = f"✅ Episódio '{series_data['title']} S{season_number:02d} E{episode_number:02d}' indexado!"
             return True, msg, users_to_alert
         else:
-            return False, "❌ Erro desconhecido ao salvar o episódio."
+            return False, "❌ Erro desconhecido ao salvar o episódio.", []
             
     except Exception as e:
         print(f"❌ ERRO CRÍTICO no _index_series_episode: {e}")
-        import traceback
-        traceback.print_exc()
-        return False, f"❌ Erro Crítico no Worker: {e}"
+        # IMPORTANTE: Retorna 3 valores aqui também para não quebrar quem chamou
+        return False, f"❌ Erro Crítico no Worker: {e}", []
 
 
 # =================================================================
