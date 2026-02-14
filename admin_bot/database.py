@@ -332,7 +332,7 @@ def get_or_create_series(tmdb_id: int) -> dict | None:
 
     # Se não for numérico (ex: "N/A", "", "None"), define como None (Null no banco)
     if not ano_str.isdigit():
-        series_details['first_air_date'] = None # Ou series_details['year'] dependendo do seu esquema
+        series_details['year'] = None # Ou series_details['year'] dependendo do seu esquema
         # Se seu banco usa uma coluna 'year', garanta que ela também receba None ou o int
         if 'year' in series_details:
              series_details['year'] = None
