@@ -500,7 +500,7 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         high_confidence_match = None
         for option in series_options:
             ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
-            if ratio > 80: 
+            if ratio > 90: 
                 high_confidence_match = option
                 break
 
@@ -725,7 +725,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         high_confidence_match = None
         for option in series_options:
             ratio = fuzz.ratio(series_title_clean.lower(), option['title'].lower())
-            if ratio > 80:
+            if ratio > 90:
                 high_confidence_match = option
                 break
 
