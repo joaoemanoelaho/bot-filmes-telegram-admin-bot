@@ -521,7 +521,7 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
 
         # DECISÃO: Só salva automático se a confiança for >= 90%
         # Isso barra o "Mindscape" (87%) mas aprova "Criminal Minds" (100%)
-        if high_confidence_match and best_ratio >= 90:
+        if high_confidence_match and best_ratio >= 85:
             tmdb_id = high_confidence_match['tmdb_id']
             await safe_edit_message(status_msg, f"✅ (Série) Encontrada: '{high_confidence_match['title']}' ({best_ratio}%). Salvando...")
             
@@ -750,7 +750,7 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
                 high_confidence_match = option
 
         # DECISÃO: Confiança >= 90%
-        if high_confidence_match and best_ratio >= 90:
+        if high_confidence_match and best_ratio >= 85:
             tmdb_id = high_confidence_match['tmdb_id']
             status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
             
