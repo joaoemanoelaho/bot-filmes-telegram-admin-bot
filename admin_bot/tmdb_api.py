@@ -14,126 +14,129 @@ search = Search()      # Instância correta
 
 def search_movie_options(query: str) -> list:
     """
-    Busca um filme e retorna os 3 melhores resultados encontrados pela API,
-    com os detalhes já em português.
+    Busca um filme e retorna os resultados.
+    Se o ano for detectado, usa filtro de ano na API para precisão total.
     """
+    movie_search = Movie() 
+    search = Search()
+
     try:
         # 1. Limpeza da query e extração do ano
         clean_query = query.replace('&', 'and')
         year_match = re.search(r'\((\d{4})\)', clean_query)
         year = int(year_match.group(1)) if year_match else None
+        
         if year:
             clean_query = re.sub(r'\s*\(\d{4}\)\s*', '', clean_query).strip()
-        
-        # 2. Busca inicial
-        # V--- CORREÇÃO 1: 'raw_response' é um dicionário ---V
-        raw_response = search.multi(term=clean_query)
-        print(f"[DEBUG TMDb] Resposta crua de search.multi: {raw_response}")
-        
-        # A lista de resultados está na chave 'results'
-        raw_results_list = raw_response.get('results', [])
 
-        # Agora, filtramos os resultados para pegar APENAS filmes
-        search_results = []
-        # V--- CORREÇÃO 2: Iterar na lista e checar o dict ---V
-        for r_dict in raw_results_list:
-            if r_dict.get('media_type') == 'movie':
-                search_results.append(r_dict)
-        # ^--- FIM DAS CORREÇÕES 2 ---^
-
-        if not search_results:
-            print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: 0")
-            return []
-        
-        print(f"Query: '{clean_query}' | Ano: {year} | Resultados (filmes) Encontrados: {len(search_results)}")
-        
-        # 3. Filtro inicial por ano (Pós-filtro)
-        filtered_results = []
+        # 2. BUSCA INTELIGENTE
         if year:
-            # V--- CORREÇÃO 3: 'r' é um dict, usar .get() ---V
-            for r_dict in search_results:
-                release_date = r_dict.get('release_date')
-                if release_date and str(year) in str(release_date):
-                    filtered_results.append(r_dict)
-            # ^--- FIM DA CORREÇÃO 3 ---^
+            print(f"[DEBUG] Buscando '{clean_query}' filtrando pelo ano {year}...")
+            # search.movies permite passar o ano, forçando o TMDb a filtrar na fonte.
+            # Isso garante que 'Rebelião (2015)' apareça, mesmo que seja impopular.
+            raw_results_list = search.movies(term=clean_query, year=year)
+        else:
+            print(f"[DEBUG] Busca ampla por '{clean_query}'...")
+            # Sem ano, usa multi-search (filmes, séries, etc)
+            raw_response = search.multi(term=clean_query)
+            raw_results_list = raw_response.get('results', [])
+
+        # 3. Processamento dos Resultados
+        # Se veio do search.movies, já são objetos. Se veio do multi, são dicts.
+        # Vamos normalizar tudo para lista de objetos ou dicts.
         
-        if not filtered_results:
-            filtered_results = search_results
-
-        options = []
-        # O loop agora pega os 3 primeiros resultados
-        # V--- CORREÇÃO 4: 'result_dict' é um dict ---V
-        for result_dict in filtered_results[:3]:
-            try:
-                tmdb_id_to_fetch = result_dict.get('id')
-                if not tmdb_id_to_fetch:
-                    continue 
-
-                details = movie_search.details(tmdb_id_to_fetch, append_to_response='translations')
-                
-                # --- LÓGICA DO TÍTULO INTELIGENTE (CORRIGIDA) ---
-                title_pt = details.title 
-                original_title = details.original_title
-                
-                english_title = None
-                translations_data = details.translations.get('translations', [])
-                english_translation = next((t['data']['title'] for t in translations_data if t['iso_639_1'] == 'en' and t['data']['title']), None)
-                if english_translation:
-                    english_title = english_translation
-                
-                # V--- INÍCIO DA CORREÇÃO ---V
-                
-                # O 'title' principal para checagem de automação DEVE ser o title_pt
-                main_title_for_check = title_pt 
-                
-                # Agora, definimos o texto do BOTÃO
-                # Por padrão, usamos o título em PT
-                button_title_to_use = title_pt 
-
-                # Se o título PT é o original E existe um em inglês...
-                if title_pt == original_title and english_title:
-                    # ...usamos o título em INGLÊS no botão.
-                    button_title_to_use = english_title
-                
-                # Montamos o texto final do botão
-                if button_title_to_use != original_title:
-                    final_button_text = f"{button_title_to_use} ({original_title})"
-                else:
-                    final_button_text = button_title_to_use
-
-                # ^--- FIM DA CORREÇÃO ---^
-
-                year_value = 'N/A'
-                try:
-                    if details.release_date:
-                        year_value = int(details.release_date.split('-')[0])
-                except: pass
-                
-                # V--- CORREÇÃO NO DICT DE RETORNO ---V
-                options.append({
-                    'tmdb_id': details.id,
-                    'title': main_title_for_check,      # <--- Sempre será o 'title_pt'
-                    'button_text': final_button_text, # <--- Texto "inteligente" para o botão
-                    'year': year_value,
-                    'genre': details.genres[0]['name'] if details.genres else 'N/A',
-                    'description': details.overview,
-                    'poster_url': f"https://image.tmdb.org/t/p/w500{details.poster_path}" if details.poster_path else None
-                })
-                # ^--- FIM DA CORREÇÃO ---^
-                
-            except TMDbException as e:
-                print(f"Erro da API TMDb ao processar {result_dict.get('id', 'ID_DESCONHECIDO')}: {e}")
-                continue
-            except Exception as e:
-                print(f"Erro ao processar resultado individual: {e}")
-                continue
+        processed_options = []
+        
+        # Iteramos sobre os resultados (pegando no máximo 5 para não demorar)
+        for result in raw_results_list:
             
-        return options
-    
-    except Exception as e:
-        print(f"Erro ao buscar opções no TMDb: {e}")
-        return []
+            # Normalização: se for objeto, converte para dict ou acessa atributos
+            # A lib tmdbv3api retorna objetos (result.id) no search.movies
+            # e dicts (result['id']) no search.multi. Vamos tratar ambos.
+            
+            try:
+                # Tenta acessar como objeto
+                r_media_type = getattr(result, 'media_type', 'movie') # search.movies só traz movie
+                r_id = getattr(result, 'id', None)
+                r_release_date = getattr(result, 'release_date', '')
+            except AttributeError:
+                # Se falhar, tenta como dict
+                r_media_type = result.get('media_type', 'movie')
+                r_id = result.get('id')
+                r_release_date = result.get('release_date', '')
 
+            # Filtra apenas filmes
+            if r_media_type != 'movie':
+                continue
+
+            # Filtro de Ano (Reforço): Se o ano foi pedido, garante que bate
+            if year and r_release_date:
+                if str(year) not in str(r_release_date):
+                    continue
+
+            # Busca detalhes completos (para tradução e botões)
+            try:
+                details = movie_search.details(r_id, append_to_response='translations')
+                
+                # Dados Principais
+                title_pt = getattr(details, 'title', 'Sem Título')
+                original_title = getattr(details, 'original_title', '')
+                
+                # Tenta achar título em Inglês nas traduções
+                english_title = None
+                translations = getattr(details, 'translations', {}).get('translations', [])
+                for t in translations:
+                    if t.get('iso_639_1') == 'en':
+                        english_title = t.get('data', {}).get('title')
+                        break
+                
+                # Lógica do Botão
+                button_text = title_pt
+                if title_pt == original_title and english_title:
+                    button_text = english_title
+                
+                if button_text != original_title:
+                    final_button_text = f"{button_text} ({original_title})"
+                else:
+                    final_button_text = button_text
+
+                # Data e Poster
+                r_year = 'N/A'
+                if getattr(details, 'release_date', None):
+                    r_year = details.release_date.split('-')[0]
+                
+                poster = getattr(details, 'poster_path', None)
+                poster_url = f"https://image.tmdb.org/t/p/w500{poster}" if poster else None
+                
+                overview = getattr(details, 'overview', '')
+                genre = 'N/A'
+                if getattr(details, 'genres', None) and len(details.genres) > 0:
+                    genre = details.genres[0]['name']
+
+                processed_options.append({
+                    'tmdb_id': r_id,
+                    'title': title_pt,
+                    'button_text': final_button_text,
+                    'year': r_year,
+                    'genre': genre,
+                    'description': overview,
+                    'poster_url': poster_url
+                })
+                
+                # Se já achamos 3 bons candidatos, paramos
+                if len(processed_options) >= 3:
+                    break
+
+            except Exception as e:
+                print(f"Erro ao processar detalhes do ID {r_id}: {e}")
+                continue
+
+        return processed_options
+
+    except Exception as e:
+        print(f"Erro geral na busca: {e}")
+        return []
+    
 #
 # --- INÍCIO DA ATUALIZAÇÃO ---
 #
