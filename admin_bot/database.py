@@ -422,7 +422,7 @@ def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, epis
 
     try:
         if existing_episode:
-            print(f"[DB] Atualizando episódio S{season_number} E{episode_number} (ID: {existing_episode['episode_id']})")
+            print(f"[DB] Atualizando episódio S{season_number} E{episode_number} (ID: {existing_episode['id']})")
             
             data_to_update = {
                 file_id_column: file_id,
@@ -432,7 +432,7 @@ def add_or_update_episode(season_id: int, tmdb_id: int, season_number: int, epis
             
             supabase.table('episodes') \
                 .update(data_to_update) \
-                .eq('episode_id', existing_episode['episode_id']) \
+                .eq('id', existing_episode['id']) \
                 .execute()
             return True
         else:
