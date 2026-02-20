@@ -13,7 +13,7 @@ from telegram import Update
 from telegram.ext import Application, PicklePersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
-from jobs_canal import postar_filme_10h, postar_serie_16h
+from jobs_canal import postar_filme_10h, postar_serie_16h, teste_bypass_grupo_canal
 
 # --- DEBUG PRINT ---
 print("[DEBUG-ADMIN] Versão do código: 1.5 (com PicklePersistence)")
@@ -71,6 +71,7 @@ async def startup():
         application.job_queue.run_daily(postar_serie_16h, time=hora_serie)
 
         application.job_queue.run_once(postar_serie_16h, when=10)
+        application.job_queue.run_once(teste_bypass_grupo_canal, when=5)
         
         print("⏰ [WEB-ADMIN] Jobs automáticos agendados para 10h e 16h!")
         

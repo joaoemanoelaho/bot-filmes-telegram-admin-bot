@@ -37,6 +37,7 @@ API_KEY = TMDB_API_KEY
 BASE_URL = os.getenv("BASE_URL")
 
 CANAL_ID = os.getenv("CANAL_ID")
+GRUPO_ID = os.getenv("GRUPO_ID")
 BOT_PRINCIPAL = os.getenv("BOT_PRINCIPAL")
 
 STICKER_BOM_DIA = os.getenv("STICKER_BOM_DIA")

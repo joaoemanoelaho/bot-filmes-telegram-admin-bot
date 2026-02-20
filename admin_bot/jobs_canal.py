@@ -5,7 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database as db
 
-from config import CANAL_ID, BOT_PRINCIPAL, STICKER_BOM_DIA, STICKER_TARDE
+from config import CANAL_ID, BOT_PRINCIPAL, STICKER_BOM_DIA, STICKER_TARDE, GRUPO_ID
 
 async def postar_filme_10h(context: ContextTypes.DEFAULT_TYPE):
     """Job que posta um filme às 10h da manhã."""
@@ -62,8 +62,8 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         )
 
         # LINK CORRIGIDO PARA SÉRIES (Abre o bot na busca inline com o nome da série já digitado)
-        titulo_formatado = urllib.parse.quote(serie.get('title', ''))
-        link_assistir = f"https://t.me/{BOT_PRINCIPAL}?inline={titulo_formatado}"
+        titulo_limpo = str(serie.get('title', '')).replace(' ', '%20')
+        link_assistir = f"https://t.me/{BOT_PRINCIPAL}?inline={titulo_limpo}"
         
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ COMEÇAR MARATONA", url=link_assistir)]])
 
@@ -80,3 +80,29 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         print(f"❌ [JOB] Erro ao postar série: {e}")
+
+async def teste_bypass_grupo_canal(context: ContextTypes.DEFAULT_TYPE):
+    """Job de Teste: Manda no Grupo e Copia pro Canal"""
+    
+    # Texto com o emoji animado de FOGO que pegamos
+    texto_post = "🎬 <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>TESTE DE BYPASS</b>\nSerá que o Telegram vai deixar?"
+
+    try:
+        # 1. Manda no Grupo (Aqui o Telegram deve renderizar o emoji animado)
+        msg_grupo = await context.bot.send_message(
+            chat_id=GRUPO_ID,
+            text=texto_post,
+            parse_mode="HTML"
+        )
+        print("✅ Mandou no grupo!")
+
+        # 2. Copia a exata mensagem do Grupo para o Canal
+        await context.bot.copy_message(
+            chat_id=CANAL_ID,
+            from_chat_id=GRUPO_ID,
+            message_id=msg_grupo.message_id
+        )
+        print("✅ Copiou pro canal! Vai lá olhar como ficou o emoji.")
+
+    except Exception as e:
+        print(f"❌ Erro no teste de bypass: {e}")
