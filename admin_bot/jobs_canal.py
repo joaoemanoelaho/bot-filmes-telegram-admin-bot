@@ -62,8 +62,10 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         )
 
         # LINK CORRIGIDO PARA SÉRIES (Abre o bot na busca inline com o nome da série já digitado)
-        titulo_limpo = str(serie.get('title', '')).replace(' ', '%20')
-        link_assistir = f"https://t.me/{BOT_PRINCIPAL}?inline={titulo_limpo}"
+        id_serie = serie.get('id', serie.get('series_id'))
+        
+        # Link mágico que abre o bot direto na série
+        link_assistir = f"https://t.me/{BOT_PRINCIPAL}?start=serie_{id_serie}"
         
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ COMEÇAR MARATONA", url=link_assistir)]])
 
