@@ -1,9 +1,6 @@
-#
-# Arquivo para gerenciar toda a interação com o banco de dados Supabase.
-#
-
 import sys
 import os
+import random
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -503,3 +500,25 @@ def verificar_pedidos_atendidos(titulo_adicionado: str) -> list[int]:
         print(f"⚠️ Erro no Radar de Pedidos: {e}")
         return []
     
+async def get_random_movie_for_post():
+    """Pega um filme aleatório entre os 50 mais recentes."""
+    try:
+        # Puxa os últimos 50 filmes do Supabase
+        response = supabase.table('movies').select('*').order('created_at', desc=True).limit(50).execute()
+        if response.data:
+            return random.choice(response.data)
+        return None
+    except Exception as e:
+        print(f"Erro ao buscar filme aleatório: {e}")
+        return None
+
+async def get_random_series_for_post():
+    """Pega uma série aleatória entre as 50 mais recentes."""
+    try:
+        response = supabase.table('series').select('*').order('created_at', desc=True).limit(50).execute()
+        if response.data:
+            return random.choice(response.data)
+        return None
+    except Exception as e:
+        print(f"Erro ao buscar série aleatória: {e}")
+        return None

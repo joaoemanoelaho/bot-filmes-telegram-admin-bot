@@ -2,6 +2,8 @@ import sys
 import os
 import logging
 import asyncio
+import datetime 
+import pytz
 from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.requests import Request
@@ -11,6 +13,7 @@ from telegram import Update
 from telegram.ext import Application, PicklePersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
 from config import ADMIN_BOT_TOKEN
+from jobs_canal import postar_filme_10h, postar_serie_16h
 
 # --- DEBUG PRINT ---
 print("[DEBUG-ADMIN] Versão do código: 1.5 (com PicklePersistence)")
@@ -56,6 +59,20 @@ async def startup():
         print("[DEBUG-ADMIN] PicklePersistence criado para persistência em disco.")
         
         application = Application.builder().token(ADMIN_BOT_TOKEN).persistence(persistence).build()
+
+        fuso = pytz.timezone('America/Sao_Paulo')
+        
+        # Agendar postagem de Filme para as 10:00:00
+        hora_filme = datetime.time(hour=10, minute=0, second=0, tzinfo=fuso)
+        application.job_queue.run_daily(postar_filme_10h, time=hora_filme)
+        
+        # Agendar postagem de Série para as 16:00:00
+        hora_serie = datetime.time(hour=16, minute=0, second=0, tzinfo=fuso)
+        application.job_queue.run_daily(postar_serie_16h, time=hora_serie)
+
+        application.job_queue.run_once(postar_filme_10h, when=10)
+        
+        print("⏰ [WEB-ADMIN] Jobs automáticos agendados para 10h e 16h!")
         
         # --- MUDANÇA 3: ADICIONAR O DEBUG HANDLER ---
         # O group=-1 garante que ele rode ANTES dos seus handlers normais.
@@ -69,8 +86,6 @@ async def startup():
         application.add_handler(handlers.admin_video_handler)
         application.add_handler(handlers.get_chat_id_command_handler)
         application.add_handler(handlers.channel_video_handler)
-        application.add_handler(handlers.admin_video_handler) # O roteador manual
-        application.add_handler(handlers.channel_video_handler) # Canal de Filmes
 
         # --- ADICIONE ESTA LINHA ---
         application.add_handler(handlers.channel_series_handler) # Canal de Séries
@@ -79,6 +94,7 @@ async def startup():
         application.add_error_handler(error_handler)
         
         await application.initialize()
+        await application.start()
         print("✅ Bot de ADMIN (webhook) inicializado com PERSISTÊNCIA EM RAM!")
         
         print("[DEBUG-ADMIN] Sinalizando APP_INITIALIZED.set()")
