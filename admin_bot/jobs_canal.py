@@ -5,14 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database as db
 
-# ================= CONFIGURAÇÕES =================
-CANAL_ID = "-1002573453246" # Coloque a tag do seu canal oficial
-BOT_PRINCIPAL = "MeuCinePipocaBot" # O username do seu bot de usuários (sem o @)
-
-# IDs dos Stickers (Se não souber pegar, me avise que te ensino!)
-STICKER_BOM_DIA = "CAACAgUAAxkBAAFC2W9pmISt24IF-VV0UrlvEiwLQS2PmAACmgADqZrmFt-aDpzFm4eFOgQ"
-STICKER_TARDE = "CAACAgUAAxkBAAFC2W9pmISt24IF-VV0UrlvEiwLQS2PmAACmgADqZrmFt-aDpzFm4eFOgQ"
-# =================================================
+from config import CANAL_ID, BOT_PRINCIPAL, STICKER_BOM_DIA, STICKER_TARDE
 
 async def postar_filme_10h(context: ContextTypes.DEFAULT_TYPE):
     """Job que posta um filme às 10h da manhã."""
