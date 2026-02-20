@@ -83,28 +83,84 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         print(f"❌ [JOB] Erro ao postar série: {e}")
 
-async def teste_bypass_grupo_canal(context: ContextTypes.DEFAULT_TYPE):
-    """Job de Teste: Manda no Grupo e Copia pro Canal"""
-    
-    # Texto com o emoji animado de FOGO que pegamos
-    texto_post = "🎬 <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>TESTE DE BYPASS</b>\nSerá que o Telegram vai deixar?"
+# ==========================================
+# 📊 ENQUETE 1: QUARTA-FEIRA (BATALHA)
+# ==========================================
+async def postar_enquete_quarta(context: ContextTypes.DEFAULT_TYPE):
+    """Batalha de 3 filmes para animar o meio da semana."""
+    f1 = await db.get_random_movie_for_post()
+    f2 = await db.get_random_movie_for_post()
+    f3 = await db.get_random_movie_for_post()
+
+    if not f1 or not f2 or not f3: return
+
+    pergunta = "🍿 MEIO DA SEMANA: Qual desses você escolheria para relaxar hoje?"
+    opcoes = [f"🎬 {f1.get('title')}", f"🔥 {f2.get('title')}", f"✨ {f3.get('title')}"]
 
     try:
-        # 1. Manda no Grupo (Aqui o Telegram deve renderizar o emoji animado)
-        msg_grupo = await context.bot.send_message(
-            chat_id=GRUPO_ID,
-            text=texto_post,
-            parse_mode="HTML"
+        await context.bot.send_poll(
+            chat_id=CANAL_ID, question=pergunta, options=opcoes,
+            is_anonymous=True, allows_multiple_answers=False
         )
-        print("✅ Mandou no grupo!")
-
-        # 2. Copia a exata mensagem do Grupo para o Canal
-        await context.bot.copy_message(
-            chat_id=CANAL_ID,
-            from_chat_id=GRUPO_ID,
-            message_id=msg_grupo.message_id
-        )
-        print("✅ Copiou pro canal! Vai lá olhar como ficou o emoji.")
-
+        print("✅ [JOB] Enquete de Quarta postada!")
     except Exception as e:
-        print(f"❌ Erro no teste de bypass: {e}")
+        print(f"❌ [JOB] Erro enquete Quarta: {e}")
+
+# ==========================================
+# 🏆 ENQUETE 2: SEXTA-FEIRA (QUIZ)
+# ==========================================
+async def postar_quiz_sexta(context: ContextTypes.DEFAULT_TYPE):
+    """Quiz valendo chuva de confetes na tela do usuário."""
+    filme = await db.get_random_movie_for_post()
+    if not filme or not filme.get('year'): return
+
+    ano_correto = int(filme.get('year'))
+    titulo = filme.get('title')
+    
+    opcoes_anos = [ano_correto, ano_correto - 3, ano_correto + 2, ano_correto - 5]
+    random.shuffle(opcoes_anos)
+    correta_index = opcoes_anos.index(ano_correto)
+    opcoes_str = [str(ano) for ano in opcoes_anos]
+
+    pergunta = f"🤔 SEXTOU COM DESAFIO: Em que ano o filme '{titulo}' foi lançado?"
+    explicacao = f"Acertou quem disse {ano_correto}! 🍿 Pesquise por {titulo} no nosso bot para assistir agora."
+
+    try:
+        await context.bot.send_poll(
+            chat_id=CANAL_ID, question=pergunta, options=opcoes_str,
+            type="quiz", correct_option_id=correta_index,
+            explanation=explicacao, is_anonymous=True
+        )
+        print("✅ [JOB] Quiz de Sexta postado!")
+    except Exception as e:
+        print(f"❌ [JOB] Erro Quiz Sexta: {e}")
+
+# ==========================================
+# 🛋️ ENQUETE 3: DOMINGO (FILMES VS SÉRIES)
+# ==========================================
+async def postar_enquete_domingo(context: ContextTypes.DEFAULT_TYPE):
+    """Combate de Domingo: 2 Filmes contra 2 Séries."""
+    f1 = await db.get_random_movie_for_post()
+    f2 = await db.get_random_movie_for_post()
+    s1 = await db.get_random_series_for_post()
+    s2 = await db.get_random_series_for_post()
+
+    if not f1 or not f2 or not s1 or not s2: return
+
+    pergunta = "🛋️ DOMINGÃO DA PREGUIÇA: O que vai salvar o seu final de domingo?"
+    opcoes = [
+        f"🎬 Filme: {f1.get('title')}",
+        f"🎬 Filme: {f2.get('title')}",
+        f"📺 Série: {s1.get('title')}",
+        f"📺 Série: {s2.get('title')}"
+    ]
+
+    try:
+        await context.bot.send_poll(
+            chat_id=CANAL_ID, question=pergunta, options=opcoes,
+            is_anonymous=True, allows_multiple_answers=False
+        )
+        print("✅ [JOB] Enquete de Domingo postada!")
+    except Exception as e:
+        print(f"❌ [JOB] Erro enquete Domingo: {e}")
+        
