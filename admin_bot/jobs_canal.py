@@ -18,7 +18,7 @@ async def postar_filme_10h(context: ContextTypes.DEFAULT_TYPE):
         # TEXTO ATUALIZADO (Sem hora, com Gênero)
         texto_post = (
             f"<tg-emoji emoji-id='5375464961822695044'>🎬</tg-emoji> <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>SESSÃO PIPOCA</b>\n\n"
-            f"<b>{filme.get('title')} ({filme.get('year')})</b>\n"
+            f"<b>{filme.get('title')} ({int(filme.get('year'))})</b>\n"
             f"<tg-emoji emoji-id='5359441070201513074'>🎭</tg-emoji> <b>Gênero:</b> {filme.get('genre', 'Não informado')}\n\n"
             f"<tg-emoji emoji-id='5334882760735598374'>📝</tg-emoji> <b>Sinopse:</b> {filme.get('description', 'Sinopse não informada no momento.')[:300]}...\n\n"
             f"<tg-emoji emoji-id='5371081166013078244'>🍿</tg-emoji> <tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> <i>Disponível agora no nosso catálogo!</i>"
@@ -55,7 +55,7 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         # TEXTO ATUALIZADO (Sem hora, com Gênero)
         texto_post = (
             f"<tg-emoji emoji-id='5373330964372004748'>📺</tg-emoji> <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>SESSÃO MARATONA</b>\n\n"
-            f"<b>{serie.get('title')} ({serie.get('year')})</b>\n"
+            f"<b>{serie.get('title')} ({int(serie.get('year'))})</b>\n"
             f"<tg-emoji emoji-id='5359441070201513074'>🎭</tg-emoji> <b>Gênero:</b> {serie.get('genre', 'Não informado')}\n\n"
             f"<tg-emoji emoji-id='5334882760735598374'>📝</tg-emoji> <b>Sinopse:</b> {serie.get('description', 'Sinopse não informada no momento.')[:300]}...\n\n"
             f"<tg-emoji emoji-id='5371081166013078244'>🍿</tg-emoji> <tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> <i>Disponível agora no nosso catálogo!</i>"
