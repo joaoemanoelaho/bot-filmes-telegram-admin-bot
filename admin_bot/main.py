@@ -70,7 +70,7 @@ async def startup():
         hora_serie = datetime.time(hour=16, minute=0, second=0, tzinfo=fuso)
         application.job_queue.run_daily(postar_serie_16h, time=hora_serie)
 
-        application.job_queue.run_repeating(postar_filme_10h, interval=10, first=10)
+        application.job_queue.run_once(postar_serie_16h, when=10)
         
         print("⏰ [WEB-ADMIN] Jobs automáticos agendados para 10h e 16h!")
         

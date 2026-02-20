@@ -6,7 +6,7 @@ from telegram.ext import ContextTypes
 import database as db
 
 # ================= CONFIGURAÇÕES =================
-CANAL_ID = "-1003516192401" # Coloque a tag do seu canal oficial
+CANAL_ID = "7108893421" # Coloque a tag do seu canal oficial
 BOT_PRINCIPAL = "MeuCinePipocaBot" # O username do seu bot de usuários (sem o @)
 
 # IDs dos Stickers (Se não souber pegar, me avise que te ensino!)
