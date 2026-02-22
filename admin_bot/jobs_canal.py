@@ -9,13 +9,16 @@ from config import CANAL_ID, BOT_PRINCIPAL, STICKER_BOM_DIA, STICKER_TARDE, GRUP
 
 async def postar_filme_10h(context: ContextTypes.DEFAULT_TYPE):
     """Job que posta um filme às 10h da manhã."""
+    print("⏰ [JOB] Iniciando postagem do Filme das 10h...")
+    
+    # 1. Busca a mídia ANTES de tudo
     filme = await db.get_random_movie_for_post()
-    if not filme: return
+    if not filme:
+        print("⚠️ [JOB] Nenhum filme encontrado no banco para postar às 10h.")
+        return
 
     try:
-        await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_BOM_DIA)
-
-        # TEXTO ATUALIZADO (Sem hora, com Gênero)
+        # 2. Prepara os textos e botões
         texto_post = (
             f"<tg-emoji emoji-id='5375464961822695044'>🎬</tg-emoji> <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>SESSÃO PIPOCA</b>\n\n"
             f"<b>{filme.get('title')} ({int(filme.get('year'))})</b>\n"
@@ -24,35 +27,48 @@ async def postar_filme_10h(context: ContextTypes.DEFAULT_TYPE):
             f"<tg-emoji emoji-id='5371081166013078244'>🍿</tg-emoji> <tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> <i>Disponível agora no nosso catálogo!</i>"
         )
 
-        # LINK CORRIGIDO (Puxa o movie_id do banco de dados)
         id_filme = filme.get('movie_id', filme.get('id'))
         link_assistir = f"https://t.me/{BOT_PRINCIPAL}?start=watch_{id_filme}"
-        
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ ASSISTIR AGORA", url=link_assistir)]])
+        
+        poster = filme.get('poster_url') or 'https://via.placeholder.com/500x750?text=Sem+Poster'
 
+        # 3. MANDA TUDO DE UMA VEZ
+        # Sticker de cima
+        await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_BOM_DIA)
+
+        # Foto com a legenda
         await context.bot.send_photo(
             chat_id=CANAL_ID,
-            photo=filme.get('poster_url', 'https://via.placeholder.com/500x750?text=Sem+Poster'), 
+            photo=poster, 
             caption=texto_post,
             parse_mode="HTML",
             reply_markup=teclado
         )
 
+        # Sticker de baixo
         await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_BOM_DIA)
-        print("✅ [JOB] Filme postado com sucesso!")
+        
+        print("✅ [JOB] Filme das 10h postado com sucesso!")
 
     except Exception as e:
-        print(f"❌ [JOB] Erro ao postar filme: {e}")
+        print(f"❌ [JOB] Erro ao postar filme das 10h: {e}")
+        # Anota o erro no caderninho para a gente não perder se a tela floodar
+        with open("erros_jobs.txt", "a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now()} - Erro no Filme (10h): {e}\n")
 
 async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
     """Job que posta uma série às 16h da tarde."""
+    print("⏰ [JOB] Iniciando postagem da Série das 16h...")
+    
+    # 1. Busca a mídia ANTES de tudo
     serie = await db.get_random_series_for_post()
-    if not serie: return
+    if not serie:
+        print("⚠️ [JOB] Nenhuma série encontrada no banco para postar às 16h.")
+        return
 
     try:
-        await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_TARDE)
-
-        # TEXTO ATUALIZADO (Sem hora, com Gênero)
+        # 2. Prepara os textos e botões
         texto_post = (
             f"<tg-emoji emoji-id='5373330964372004748'>📺</tg-emoji> <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>SESSÃO MARATONA</b>\n\n"
             f"<b>{serie.get('title')} ({int(serie.get('year'))})</b>\n"
@@ -61,27 +77,35 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
             f"<tg-emoji emoji-id='5371081166013078244'>🍿</tg-emoji> <tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> <i>Disponível agora no nosso catálogo!</i>"
         )
 
-        # LINK CORRIGIDO PARA SÉRIES (Abre o bot na busca inline com o nome da série já digitado)
         id_serie = serie.get('id', serie.get('series_id'))
-        
-        # Link mágico que abre o bot direto na série
         link_assistir = f"https://t.me/{BOT_PRINCIPAL}?start=serie_{id_serie}"
-        
         teclado = InlineKeyboardMarkup([[InlineKeyboardButton("▶️ COMEÇAR MARATONA", url=link_assistir)]])
+        
+        poster = serie.get('poster_url') or 'https://via.placeholder.com/500x750?text=Sem+Poster'
 
+        # 3. MANDA TUDO DE UMA VEZ
+        # Sticker de cima
+        await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_TARDE)
+
+        # Foto com a legenda
         await context.bot.send_photo(
             chat_id=CANAL_ID,
-            photo=serie.get('poster_url', 'https://via.placeholder.com/500x750?text=Sem+Poster'), 
+            photo=poster, 
             caption=texto_post,
             parse_mode="HTML",
             reply_markup=teclado
         )
 
+        # Sticker de baixo
         await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_TARDE)
-        print("✅ [JOB] Série postada com sucesso!")
+        
+        print("✅ [JOB] Série das 16h postada com sucesso!")
 
     except Exception as e:
-        print(f"❌ [JOB] Erro ao postar série: {e}")
+        print(f"❌ [JOB] Erro ao postar série das 16h: {e}")
+        # Anota o erro no caderninho para a gente não perder se a tela floodar
+        with open("erros_jobs.txt", "a", encoding="utf-8") as f:
+            f.write(f"{datetime.datetime.now()} - Erro na Série (16h): {e}\n")
 
 # ==========================================
 # 📊 ENQUETE 1: QUARTA-FEIRA (BATALHA)

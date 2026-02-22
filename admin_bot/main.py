@@ -74,21 +74,21 @@ async def startup():
         application.job_queue.run_daily(
             postar_enquete_quarta, 
             time=datetime.time(hour=12, minute=0, tzinfo=fuso), 
-            days=(2,)
+            days=(3,)
         )
 
         # SEXTA-FEIRA (Dia 4) às 18:00
         application.job_queue.run_daily(
             postar_quiz_sexta, 
             time=datetime.time(hour=18, minute=0, tzinfo=fuso), 
-            days=(4,)
+            days=(5,)
         )
 
         # DOMINGO (Dia 6) às 14:00
         application.job_queue.run_daily(
             postar_enquete_domingo, 
             time=datetime.time(hour=14, minute=0, tzinfo=fuso), 
-            days=(6,)
+            days=(0,)
         )
 
         print("⏰ [WEB-ADMIN] Jobs automáticos agendados para 10h e 16h!")
