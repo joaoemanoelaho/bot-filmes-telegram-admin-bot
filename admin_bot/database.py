@@ -322,10 +322,16 @@ def get_or_create_series(tmdb_id: int) -> dict | None:
         print(f"❌ [DB] Falha ao buscar detalhes da série {tmdb_id} no TMDb.")
         return None
     
+    # === A CORREÇÃO ENTRA AQUI ===
     raw_date = series_details.get('first_air_date') or series_details.get('release_date', '')
     
     # Pega apenas o ano (YYYY)
     ano_str = str(raw_date).split('-')[0]
+    
+    if ano_str.isdigit():
+        series_details['year'] = int(ano_str)
+    else:
+        series_details['year'] = None
 
     # Se não for numérico (ex: "N/A", "", "None"), define como None (Null no banco)
     if not ano_str.isdigit():
