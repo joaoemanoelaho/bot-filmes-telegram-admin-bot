@@ -9,7 +9,6 @@ import database as db
 import tmdb_api
 from config import ADMIN_IDS, STORAGE_CHANNEL_ID, STORAGE_CHANNEL_ID_SERIES
 
-# Importando das nossas novas "caixas de ferramentas"
 from utils import SERIES_REGEX, safe_answer_query, safe_edit_message, safe_send_message, notificar_usuarios_radar
 from core_indexer import _index_series_episode, _process_movie_upload, _process_series_upload
 
@@ -147,8 +146,8 @@ async def admin_video_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     clean_file_name = file_name.rsplit('.', 1)[0] if file_name.lower().endswith(('.mp4', '.mkv', '.avi')) else file_name
     series_match = SERIES_REGEX.search(clean_file_name)
     
-    if series_match: await _process_series_upload(update, context, clean_file_name, series_match)
-    else: await _process_movie_upload(update, context, clean_file_name)
+    if series_match: await _process_series_upload(update, context, file_name, series_match)
+    else: await _process_movie_upload(update, context, file_name)
 
 async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     post = update.channel_post or update.message
@@ -159,11 +158,16 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
     
     file_id, unique_id, msg_id = post.video.file_id, post.video.file_unique_id, post.message_id
     
+    # --- 🎯 O SEGREDO DO ID AQUI ---
+    tmdb_match = re.search(r'\[TMDB:\s*(\d+)\]', file_name, re.IGNORECASE)
+    tmdb_id_from_caption = int(tmdb_match.group(1)) if tmdb_match else None
+    
     audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
     if not audio_type_match: return
         
     audio_type = audio_type_match.group(1).upper()
-    temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', file_name, flags=re.IGNORECASE).strip()
+    temp_name = re.sub(r'\[TMDB:\s*\d+\]', '', file_name, flags=re.IGNORECASE) # Remove a tag para limpar o nome
+    temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', temp_name, flags=re.IGNORECASE).strip()
     search_query_clean = re.sub(r'\s*4k?\s*$', '', os.path.splitext(temp_name)[0], flags=re.IGNORECASE).strip()
     
     movie_options = tmdb_api.search_movie_options(search_query_clean)
@@ -171,7 +175,15 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
         await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"❌ (Filme) Sem resultados para '{search_query_clean}'.")
         return
 
-    high_confidence_match = next((opt for opt in movie_options if fuzz.ratio(search_query_clean.lower(), f"{opt['title']} ({opt['year']})".lower()) > 85), None)
+    high_confidence_match = None
+    
+    # Se achamos a tag do TMDB na legenda, procura ela nas opções do TMDB:
+    if tmdb_id_from_caption:
+        high_confidence_match = next((opt for opt in movie_options if opt.get('tmdb_id') == tmdb_id_from_caption), None)
+        
+    # Se não tinha a tag ou a API não retornou esse ID, volta para o Modo Antigo (Fuzzy)
+    if not high_confidence_match:
+        high_confidence_match = next((opt for opt in movie_options if fuzz.ratio(search_query_clean.lower(), f"{opt['title']} ({opt['year']})".lower()) > 85), None)
 
     if high_confidence_match:
         status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando FILME: '{search_query_clean}'...")
@@ -187,7 +199,7 @@ async def new_movie_in_channel_handler(update: Update, context: ContextTypes.DEF
             movie_details.pop('button_text', None)
             if db.add_movie(movie_details):
                 await notificar_usuarios_radar(context, db.verificar_pedidos_atendidos(movie_details['title']), movie_details['title'])
-            msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+            msg = f"✅ Filme '{movie_details['title']}' adicionado com Precisão Cirúrgica!"
         await safe_edit_message(status_msg, msg)
     else:
         request_id = str(uuid.uuid4())
@@ -204,7 +216,13 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
     if not file_name: return
     
     file_id, unique_id, msg_id = post.video.file_id, post.video.file_unique_id, post.message_id
-    clean_file_name = file_name.rsplit('.', 1)[0] if file_name.lower().endswith(('.mp4', '.mkv', '.avi')) else file_name
+    
+    # --- 🎯 O SEGREDO DO ID AQUI ---
+    tmdb_match = re.search(r'\[TMDB:\s*(\d+)\]', file_name, re.IGNORECASE)
+    tmdb_id_from_caption = int(tmdb_match.group(1)) if tmdb_match else None
+    
+    clean_file_name = re.sub(r'\[TMDB:\s*\d+\]', '', file_name, flags=re.IGNORECASE) # Remove a tag
+    clean_file_name = clean_file_name.rsplit('.', 1)[0] if clean_file_name.lower().endswith(('.mp4', '.mkv', '.avi')) else clean_file_name
     clean_file_name = re.sub(r'^[^\w(]+', '', re.sub(r'[★☆✦✧✨⭐❖❥•■□◆◇●○♦♥♡♠♣☀☁☂☃☄☾☽♬♪♫♩]', '', re.sub(r"\s+", " ", clean_file_name.replace("…", "...").replace("_", " ").strip()))).strip()
     
     series_match = SERIES_REGEX.search(clean_file_name)
@@ -220,15 +238,23 @@ async def new_series_in_channel_handler(update: Update, context: ContextTypes.DE
         return
 
     high_confidence_match, best_ratio = None, 0
-    for option in series_options:
-        current_max = max(fuzz.ratio(series_title_clean.lower(), option.get('title', '').lower()), fuzz.ratio(series_title_clean.lower(), (option.get('original_name', '') or option.get('original_title', '')).lower()))
-        if current_max > best_ratio:
-            best_ratio, high_confidence_match = current_max, option
+    
+    # Se achamos a tag do TMDB na legenda, procura nas opções
+    if tmdb_id_from_caption:
+        high_confidence_match = next((opt for opt in series_options if opt.get('tmdb_id') == tmdb_id_from_caption), None)
+        if high_confidence_match: best_ratio = 100 # Força a aceitação
+        
+    # Fallback (Fuzzy)
+    if not high_confidence_match:
+        for option in series_options:
+            current_max = max(fuzz.ratio(series_title_clean.lower(), option.get('title', '').lower()), fuzz.ratio(series_title_clean.lower(), (option.get('original_name', '') or option.get('original_title', '')).lower()))
+            if current_max > best_ratio:
+                best_ratio, high_confidence_match = current_max, option
 
     if high_confidence_match and best_ratio >= 85:
         status_msg = await safe_send_message(context, chat_id=ADMIN_IDS[0], text=f"⏳ Indexando SÉRIE: '{clean_file_name}'...")
         success, msg, users_alert = await _index_series_episode(high_confidence_match['tmdb_id'], season_number, episode_number, audio_type, file_id, unique_id, msg_id)
-        await safe_edit_message(status_msg, msg)
+        await safe_edit_message(status_msg, msg + " (Precisão TMDB)")
         if users_alert: await notificar_usuarios_radar(context, users_alert, series_title_clean)
     else:
         request_id = str(uuid.uuid4())

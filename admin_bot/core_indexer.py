@@ -43,13 +43,18 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
         
         status_msg = await update.message.reply_text(f"⏳ Processando FILME '{file_name}'...")
         
+        # --- ID DO TMDB ---
+        tmdb_match = re.search(r'\[TMDB:\s*(\d+)\]', file_name, re.IGNORECASE)
+        tmdb_id_from_caption = int(tmdb_match.group(1)) if tmdb_match else None
+        
         audio_type_match = re.search(r'\[(DUB|LEG)\]', file_name, re.IGNORECASE)
         if not audio_type_match:
             await safe_edit_message(status_msg, f"❓ Falha (Filme): O nome precisa conter [DUB] ou [LEG].")
             return
         
         audio_type = audio_type_match.group(1).upper()
-        temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', file_name, flags=re.IGNORECASE).strip()
+        temp_name = re.sub(r'\[TMDB:\s*\d+\]', '', file_name, flags=re.IGNORECASE)
+        temp_name = re.sub(r'\s*\[(DUB|LEG)\]\s*', '', temp_name, flags=re.IGNORECASE).strip()
         search_query, _ = os.path.splitext(temp_name)
         search_query_clean = re.sub(r'\s*4k?\s*$', '', search_query, flags=re.IGNORECASE).strip()
 
@@ -60,14 +65,19 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         high_confidence_match = None
-        if len(movie_options) == 1:
-            high_confidence_match = movie_options[0]
-        else:
-            for option in movie_options:
-                option_full_title = f"{option['title']} ({option['year']})"
-                if fuzz.ratio(search_query_clean.lower(), option_full_title.lower()) > 85:
-                    high_confidence_match = option
-                    break
+        
+        if tmdb_id_from_caption:
+            high_confidence_match = next((opt for opt in movie_options if opt.get('tmdb_id') == tmdb_id_from_caption), None)
+            
+        if not high_confidence_match:
+            if len(movie_options) == 1:
+                high_confidence_match = movie_options[0]
+            else:
+                for option in movie_options:
+                    option_full_title = f"{option['title']} ({option['year']})"
+                    if fuzz.ratio(search_query_clean.lower(), option_full_title.lower()) > 85:
+                        high_confidence_match = option
+                        break
 
         if high_confidence_match:
             await safe_edit_message(status_msg, f"✅ (Filme) Correspondência: '{high_confidence_match['title']}'. Salvando...")
@@ -92,7 +102,7 @@ async def _process_movie_upload(update: Update, context: ContextTypes.DEFAULT_TY
                 
                 movie_details.pop('button_text', None)
                 success = db.add_movie(movie_details)
-                msg = f"✅ Filme '{movie_details['title']}' adicionado!"
+                msg = f"✅ Filme '{movie_details['title']}' adicionado com Precisão!"
 
             if success:
                 users = db.verificar_pedidos_atendidos(movie_details['title'])
@@ -123,6 +133,10 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         
         status_msg = await update.message.reply_text(f"⏳ Processando SÉRIE '{file_name}'...")
         
+        # --- ID DO TMDB ---
+        tmdb_match = re.search(r'\[TMDB:\s*(\d+)\]', file_name, re.IGNORECASE)
+        tmdb_id_from_caption = int(tmdb_match.group(1)) if tmdb_match else None
+        
         series_title_clean = series_match.group(1).strip() 
         series_year = series_match.group(2).strip() if series_match.group(2) else None
         season_number = int(series_match.group(3)) 
@@ -136,17 +150,23 @@ async def _process_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             return
 
         high_confidence_match, best_ratio = None, 0
-        for option in series_options:
-            titulo_pt = option.get('title', '')
-            titulo_original = option.get('original_name', '') or option.get('original_title', '')
+        
+        if tmdb_id_from_caption:
+            high_confidence_match = next((opt for opt in series_options if opt.get('tmdb_id') == tmdb_id_from_caption), None)
+            if high_confidence_match: best_ratio = 100
             
-            ratio_pt = fuzz.ratio(series_title_clean.lower(), titulo_pt.lower())
-            ratio_en = fuzz.ratio(series_title_clean.lower(), titulo_original.lower())
-            
-            current_max = max(ratio_pt, ratio_en)
-            if current_max > best_ratio:
-                best_ratio = current_max
-                high_confidence_match = option
+        if not high_confidence_match:
+            for option in series_options:
+                titulo_pt = option.get('title', '')
+                titulo_original = option.get('original_name', '') or option.get('original_title', '')
+                
+                ratio_pt = fuzz.ratio(series_title_clean.lower(), titulo_pt.lower())
+                ratio_en = fuzz.ratio(series_title_clean.lower(), titulo_original.lower())
+                
+                current_max = max(ratio_pt, ratio_en)
+                if current_max > best_ratio:
+                    best_ratio = current_max
+                    high_confidence_match = option
 
         if high_confidence_match and best_ratio >= 85:
             tmdb_id = high_confidence_match['tmdb_id']
