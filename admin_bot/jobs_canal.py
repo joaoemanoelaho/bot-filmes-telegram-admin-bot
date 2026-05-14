@@ -68,10 +68,14 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # 🛡️ PROTEÇÃO DO ANO: Pega o ano com segurança para não quebrar
+        ano_bruto = serie.get('year')
+        ano_formatado = f" ({str(ano_bruto).split('-')[0]})" if ano_bruto and str(ano_bruto).lower() != "none" else ""
+
         # 2. Prepara os textos e botões
         texto_post = (
             f"<tg-emoji emoji-id='5373330964372004748'>📺</tg-emoji> <tg-emoji emoji-id='5420315771991497307'>🔥</tg-emoji> <b>SESSÃO MARATONA</b>\n\n"
-            f"<b>{serie.get('title')} ({int(serie.get('year'))})</b>\n"
+            f"<b>{serie.get('title')}{ano_formatado}</b>\n"
             f"<tg-emoji emoji-id='5359441070201513074'>🎭</tg-emoji> <b>Gênero:</b> {serie.get('genre', 'Não informado')}\n\n"
             f"<tg-emoji emoji-id='5334882760735598374'>📝</tg-emoji> <b>Sinopse:</b> {serie.get('description', 'Sinopse não informada no momento.')[:300]}...\n\n"
             f"<tg-emoji emoji-id='5371081166013078244'>🍿</tg-emoji> <tg-emoji emoji-id='5472164874886846699'>✨</tg-emoji> <i>Disponível agora no nosso catálogo!</i>"
@@ -84,10 +88,8 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         poster = serie.get('poster_url') or 'https://via.placeholder.com/500x750?text=Sem+Poster'
 
         # 3. MANDA TUDO DE UMA VEZ
-        # Sticker de cima
         await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_TARDE)
 
-        # Foto com a legenda
         await context.bot.send_photo(
             chat_id=CANAL_ID,
             photo=poster, 
@@ -96,14 +98,12 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
             reply_markup=teclado
         )
 
-        # Sticker de baixo
         await context.bot.send_sticker(chat_id=CANAL_ID, sticker=STICKER_TARDE)
         
         print("✅ [JOB] Série das 16h postada com sucesso!")
 
     except Exception as e:
         print(f"❌ [JOB] Erro ao postar série das 16h: {e}")
-        # Anota o erro no caderninho para a gente não perder se a tela floodar
         with open("erros_jobs.txt", "a", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.now()} - Erro na Série (16h): {e}\n")
 
