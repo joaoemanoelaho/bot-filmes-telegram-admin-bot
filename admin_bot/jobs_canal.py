@@ -106,6 +106,7 @@ async def postar_serie_16h(context: ContextTypes.DEFAULT_TYPE):
         print(f"❌ [JOB] Erro ao postar série das 16h: {e}")
         with open("erros_jobs.txt", "a", encoding="utf-8") as f:
             f.write(f"{datetime.datetime.now()} - Erro na Série (16h): {e}\n")
+            
 
 # ==========================================
 # 📊 ENQUETE 1: QUARTA-FEIRA (BATALHA)
