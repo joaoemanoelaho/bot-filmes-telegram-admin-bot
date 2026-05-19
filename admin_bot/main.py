@@ -9,10 +9,11 @@ from starlette.routing import Route
 from starlette.requests import Request
 from starlette.responses import Response
 from telegram import Update
+from contextlib import asynccontextmanager
 # --- MUDANÇA 1: IMPORTAR O CachePersistence E TypeHandler ---
 from telegram.ext import Application, PicklePersistence, TypeHandler, ContextTypes
 import handlers_admin as handlers
-from config import ADMIN_BOT_TOKEN
+from config import ADMIN_BOT_TOKEN, ADMIN_WEBHOOK_URL
 from jobs_canal import postar_filme_10h, postar_serie_16h, postar_enquete_quarta, postar_quiz_sexta, postar_enquete_domingo
 
 # --- DEBUG PRINT ---
@@ -116,6 +117,32 @@ async def startup():
         await application.start()
         print("✅ Bot de ADMIN (webhook) inicializado com PERSISTÊNCIA EM RAM!")
         
+        # ==========================================================
+        # 🔗 ATIVAÇÃO AUTOMÁTICA DO WEBHOOK (SISTEMA BLINDADO)
+        # ==========================================================
+     
+        if ADMIN_WEBHOOK_URL:
+            # Garante que não tenha barra dupla no final
+            admin_domain = ADMIN_WEBHOOK_URL.rstrip('/') 
+            webhook_url = f"{admin_domain}/webhook/admin"
+            print(f"ℹ️ Configurando webhook do Telegram ADMIN para: {webhook_url}")
+            
+            for tentativa in range(5):
+                try:
+                    # drop_pending_updates=True limpa mensagens antigas presas
+                    await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+                    print("✅ Webhook do ADMIN configurado com sucesso!")
+                    break # Deu certo, sai do loop!
+                except Exception as e:
+                    print(f"⚠️ Falha de rede ao conectar (Tentativa {tentativa + 1}/5): {e}")
+                    if tentativa == 4:
+                        print("💀 Rede falhou. Desistindo da configuração do webhook...")
+                        raise
+                    await asyncio.sleep(3)
+        else:
+            print("⚠️ AVISO: Variável ADMIN_WEBHOOK_URL não encontrada! Configure no painel da Square Cloud.")
+        # ==========================================================
+
         print("[DEBUG-ADMIN] Sinalizando APP_INITIALIZED.set()")
         APP_INITIALIZED.set() 
         print("[DEBUG-ADMIN] Startup concluído.")
@@ -163,7 +190,15 @@ routes = [
     Route("/health", endpoint=health_check, methods=["GET"]),
 ]
 
-app = Starlette(routes=routes, on_startup=[startup])
+# --- NOVO SISTEMA LIFESPAN DO STARLETTE ---
+@asynccontextmanager
+async def lifespan(app: Starlette):
+    # Tudo que roda ao ligar o bot
+    await startup()
+    yield
+    # (Se precisar de código para desligar no futuro, entra aqui)
+
+app = Starlette(routes=routes, lifespan=lifespan)
 
 if __name__ == "__main__":
     import uvicorn
